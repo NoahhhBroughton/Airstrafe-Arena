@@ -43,7 +43,6 @@ import {
   SLIDE_FRICTION,
   SLIDE_GRACE_TIME,
   SLIDE_MIN_SPEED,
-  SLIDE_TURN_RATE,
   STEP_HEIGHT,
 } from "./constants.js";
 
@@ -99,7 +98,6 @@ export interface MoveOptions {
   airWishSpeedCap?: number;
   slide?: boolean;
   slideBoostSpeed?: number;
-  slideTurnRate?: number;
 }
 
 export function createPlayerState(position: Vec3): PlayerState {
@@ -113,41 +111,6 @@ export function createPlayerState(position: Vec3): PlayerState {
     sliding: false,
     slideTime: 0,
   };
-}
-
-/**
- * Rotate horizontal velocity toward `target` by at most `maxAngleDeg`, keeping its magnitude.
- *
- * Steering, not acceleration: the speed that goes in comes out. Vertical velocity is left
- * alone so a slide down a ramp keeps following the surface.
- */
-function steerTowards(velocity: Vec3, target: Vec3, maxAngleDeg: number): Vec3 {
-  const horizontal = { x: velocity.x, y: 0, z: velocity.z };
-  const speed = vec3.length(horizontal);
-  if (speed < EPSILON || vec3.lengthSq(target) < EPSILON) return velocity;
-
-  const from = vec3.scale(horizontal, 1 / speed);
-  const cos = Math.min(Math.max(vec3.dot(from, target), -1), 1);
-  const angle = Math.acos(cos);
-  if (angle < 1e-5) return velocity;
-
-  const maxAngle = (maxAngleDeg * Math.PI) / 180;
-  const t = Math.min(1, maxAngle / angle);
-
-  // Spherical interpolation between the two headings. A linear blend would shrink the vector
-  // as it crosses the midpoint, which would leak speed out of a manoeuvre that is meant to
-  // cost none.
-  const sinTotal = Math.sin(angle);
-  const direction =
-    sinTotal < 1e-6
-      ? target
-      : vec3.normalize({
-          x: (from.x * Math.sin((1 - t) * angle) + target.x * Math.sin(t * angle)) / sinTotal,
-          y: 0,
-          z: (from.z * Math.sin((1 - t) * angle) + target.z * Math.sin(t * angle)) / sinTotal,
-        });
-
-  return { x: direction.x * speed, y: velocity.y, z: direction.z * speed };
 }
 
 /** Total collision height at a given duck amount. */
@@ -221,6 +184,11 @@ function updateDuck(
  * Yaw 0 faces -Z, matching Three.js's default camera orientation, so the client can feed the
  * camera's yaw straight in without a conversion step that could drift from the server's.
  */
+/** Horizontal direction the player is facing. Yaw 0 faces -Z, matching Three.js's camera. */
+export function viewForward(yaw: number): Vec3 {
+  return { x: -Math.sin(yaw), y: 0, z: -Math.cos(yaw) };
+}
+
 export function wishDirection(input: PlayerInput): Vec3 {
   const sin = Math.sin(input.yaw);
   const cos = Math.cos(input.yaw);
@@ -500,16 +468,14 @@ export function movePlayer(
       if (slideTime > SLIDE_GRACE_TIME) {
         velocity = applyFriction(velocity, dt, SLIDE_FRICTION);
       }
-      // Steering, not acceleration. Hold a movement key and the slide turns toward where you
-      // are looking, keeping its speed exactly. Accelerating here instead - which is what the
-      // airborne wishSpeed cap did - made a slide into air strafing on the ground, where mouse
-      // technique built speed indefinitely.
-      if (inputMagnitude > 0) {
-        velocity = steerTowards(
-          velocity,
-          wishDir,
-          (options.slideTurnRate ?? SLIDE_TURN_RATE) * dt,
-        );
+      // Aim, not acceleration and not WASD. The slide points exactly where you are looking,
+      // instantly, and movement keys are ignored entirely - which is what makes it read as
+      // "steer with the mouse" rather than as a weaker version of walking. Speed is carried
+      // through the turn untouched, so aiming neither costs nor gains anything.
+      const slideSpeed = vec3.horizontalLength(velocity);
+      if (slideSpeed > EPSILON) {
+        const aim = viewForward(input.yaw);
+        velocity = { x: aim.x * slideSpeed, y: velocity.y, z: aim.z * slideSpeed };
       }
     } else {
       // Ducking slows you down, but only on the ground. Applying it airborne would make a

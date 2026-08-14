@@ -133,7 +133,6 @@ async function main(): Promise<void> {
       airWishSpeedCap: s.airWishSpeedCap,
       slide: s.slide,
       slideBoostSpeed: s.slideBoostSpeed,
-      slideTurnRate: s.slideTurnRate,
     };
 
     accumulator += frameDt;

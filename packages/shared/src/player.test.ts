@@ -661,7 +661,7 @@ test("slide speed holds for SLIDE_GRACE_TIME, then falls off", () => {
   assert.ok(afterFalloff < atGraceEnd * 0.9, `no falloff after grace: ${atGraceEnd} -> ${afterFalloff}`);
 });
 
-test("holding forward steers a slide toward where you are looking", () => {
+test("a slide follows the aim instantly, with no movement keys held", () => {
   const world = flatGround();
   let state: PlayerState = {
     ...createPlayerState({ x: 0, y: 60, z: 0 }),
@@ -670,17 +670,45 @@ test("holding forward steers a slide toward where you are looking", () => {
   while (!state.onGround) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
   assert.equal(state.sliding, true);
 
-  // Look 90 degrees to the left (-X) and hold forward.
+  // Whip the view 90 degrees left. No WASD at all.
   const yaw = Math.PI / 2;
-  for (let i = 0; i < 64; i++) {
-    state = movePlayer(state, input({ forward: 1, crouch: true, yaw }), world, TICK_DT);
-  }
+  state = movePlayer(state, input({ crouch: true, yaw }), world, TICK_DT);
 
   const heading = vec3.normalize({ x: state.velocity.x, y: 0, z: state.velocity.z });
-  assert.ok(heading.x < -0.95, `slide did not turn to face -X: heading x=${heading.x}`);
+  assert.ok(
+    heading.x < -0.999,
+    `slide did not snap to the aim in one tick: heading x=${heading.x}`,
+  );
 });
 
-test("steering a slide costs no speed and cannot gain any", () => {
+test("movement keys do nothing while sliding - only the mouse steers", () => {
+  const world = flatGround();
+  const enter = (): PlayerState => {
+    let s: PlayerState = {
+      ...createPlayerState({ x: 0, y: 60, z: 0 }),
+      velocity: { x: 0, y: 0, z: -500 },
+    };
+    while (!s.onGround) s = movePlayer(s, input({ crouch: true }), world, TICK_DT);
+    return s;
+  };
+
+  // Same view the whole time; one run mashes every movement key, the other holds none.
+  let idle = enter();
+  let mashing = enter();
+  for (let i = 0; i < 64; i++) {
+    idle = movePlayer(idle, input({ crouch: true }), world, TICK_DT);
+    mashing = movePlayer(
+      mashing,
+      input({ forward: i % 2 ? 1 : -1, right: i % 3 ? 1 : -1, crouch: true }),
+      world,
+      TICK_DT,
+    );
+  }
+
+  assert.deepEqual(mashing.velocity, idle.velocity, "movement keys changed a slide");
+});
+
+test("aiming a slide costs no speed and cannot gain any", () => {
   const world = flatGround();
   const enter = (): PlayerState => {
     let s: PlayerState = {

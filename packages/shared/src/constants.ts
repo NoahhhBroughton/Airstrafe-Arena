@@ -127,15 +127,15 @@ export const SLIDE_END_SPEED = 120;
  */
 export const SLIDE_BOOST_SPEED = 750;
 
-/**
- * How fast a slide can be steered, in degrees per second, while a movement key is held.
- *
- * A slide *turns* its velocity toward where you are looking; it never accelerates it. That is
- * deliberate: accelerating a slide with the airborne wishSpeed cap turned it into air strafing
- * on the ground, where mouse technique built speed indefinitely. Rotating preserves the
- * magnitude exactly, so the only things that change slide speed are the slope and friction.
- */
-export const SLIDE_TURN_RATE = 240;
+// A slide steers with the mouse alone. Movement keys do nothing while sliding, and the velocity
+// points exactly where you are aiming, turning instantly rather than at some rate. The magnitude
+// is preserved through the turn, so aiming costs nothing and gains nothing - the only things
+// that change slide speed are the slope and, after the grace window, friction.
+//
+// Two earlier versions of this are worth not repeating. Accelerating a slide with the airborne
+// wishSpeed cap made it air strafing on the ground, where mouse technique built speed forever.
+// Rate-limited steering was better but still felt indirect, since the slide lagged behind where
+// you were pointing.
 
 /**
  * Seconds a slide holds its speed before friction starts eating it. Inside this window a slide

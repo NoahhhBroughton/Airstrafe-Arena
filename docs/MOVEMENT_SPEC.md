@@ -184,22 +184,23 @@ crouch already held.
 | `SLIDE_END_SPEED` | 120 | Below this the slide gives out |
 | `SLIDE_GRACE_TIME` | 2s | Speed is untouched for this long before falloff begins |
 | `SLIDE_FRICTION` | 0.35 | Applied only after the grace window; against `FRICTION` 4 |
-| `SLIDE_TURN_RATE` | 240°/s | How fast a slide can be aimed. Steering only — never adds speed |
 
 **Entering a slide boosts you to `SLIDE_BOOST_SPEED`**, well over `MAX_GROUND_SPEED` (320). That
 jump is the reward for sliding and the reason to slide out of a run rather than keep running. It
 is applied as a *floor, never a cap*: entering already faster — off a bhop chain, say — keeps
 whatever speed you arrived with instead of being clamped down to it.
 
-**A slide steers; it does not accelerate.** Hold a movement key and the slide *rotates* its
-velocity toward where you are looking, at up to `SLIDE_TURN_RATE` (240°/s), keeping the
-magnitude exactly. Nothing about mouse movement can add speed.
+**A slide is aimed, not driven.** Movement keys do nothing while sliding. Velocity points
+exactly where you are looking and turns *instantly* — the magnitude is carried through the turn
+untouched, so aiming neither costs nor gains speed.
 
-This was tried the other way first — accelerating with the airborne wishSpeed cap — and it made
-a slide into air strafing on the ground, where the usual strafe technique built speed
-indefinitely. Rotation is spherical for the same reason it is elsewhere: a linear blend between
-two headings shrinks the vector as it crosses, leaking speed out of a manoeuvre meant to cost
-none.
+Two earlier versions are worth not repeating:
+
+1. Accelerating with the airborne wishSpeed cap. That made a slide into air strafing on the
+   ground, where the usual strafe technique built speed indefinitely.
+2. Rate-limited steering toward `wishDir` while a movement key was held. Better, but the slide
+   lagged behind where you were pointing, which reads as indirect — and tying it to WASD made
+   it feel like a weaker walk rather than its own thing.
 
 For the first `SLIDE_GRACE_TIME` a slide is free: no friction at all, so the only thing changing
 your speed is the slope. After that `SLIDE_FRICTION` starts taking it back, and the slide ends
@@ -260,6 +261,12 @@ over `DUCK_VIEW_SMOOTH_TIME`. The feet jump 18 immediately, the eye offset has n
 yet, so the view visibly rises — then settles as it does. Releasing runs it in reverse: the
 camera drops and rises back. This is cosmetic and lives entirely at render time; the simulation
 never sees it.
+
+The other half of making a crouch readable is having something to look at — see
+`packages/client/src/viewmodel.ts` for the first-person body. The geometry note that matters
+there: the camera is the player's *eyes*, at the front of the head, so the torso hangs **behind**
+it and the legs angle **forward** from the hips. Placing the body directly under the camera
+instead shows you a cross-section through the middle of your own thighs.
 
 Ducking scales ground speed only. Applying it airborne would make a crouch-jump cost air
 control, turning a movement technique into a penalty.

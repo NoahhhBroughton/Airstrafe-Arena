@@ -116,7 +116,7 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
         kind: "toggle",
         key: "slide",
         label: "Slide",
-        hint: "Crouch while moving fast to slide instead of stopping. Downhill slides accelerate.",
+        hint: "Crouch while moving fast to slide instead of stopping. Steer it with the mouse alone — movement keys do nothing while sliding. Downhill slides accelerate.",
       },
       {
         kind: "number",
@@ -124,13 +124,6 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
         label: "Slide boost",
         step: 25,
         hint: "Speed a slide launches you to. A floor, not a cap — entering faster keeps what you arrived with.",
-      },
-      {
-        kind: "number",
-        key: "slideTurnRate",
-        label: "Slide steering",
-        step: 10,
-        hint: "Degrees per second a slide turns toward where you look while holding a move key. Steering only — it never adds speed.",
       },
     ],
   },

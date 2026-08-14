@@ -10,7 +10,7 @@
 // slide pose without a skeleton. Purely cosmetic - it reads player state and never writes it.
 
 import * as THREE from "three";
-import { hullHeight, vec3, type PlayerState } from "@airstrafe-arena/shared";
+import { hullHeight, vec3, PLAYER_HEIGHT, type PlayerState } from "@airstrafe-arena/shared";
 
 const SKIN = 0xd8a07a;
 const SHIRT = 0x4a6ea8;
@@ -45,14 +45,28 @@ export function createViewModel(): ViewModel {
   const hips = new THREE.Group();
   body.add(hips);
 
-  // Pelvis only - no torso. A chest sits within a few units of the camera and inside its
-  // horizontal footprint, so at this FOV it fills the screen the moment you look down. Legs
-  // are the readable part anyway, which is what this is for.
+  // Anatomy note, and the whole reason this looks right or wrong: the camera is the player's
+  // *eyes*, which sit at the front of the head, not at the centre of the body. So the torso
+  // hangs BEHIND the camera and the legs angle FORWARD from the hips. Put the body directly
+  // under the camera instead and looking down shows you a cross-section through the middle of
+  // your own thighs, which is exactly as odd as it sounds.
+  const TORSO_BACK = 9;
   const pelvis = new THREE.Mesh(
-    new THREE.BoxGeometry(20, 8, 12),
+    new THREE.BoxGeometry(20, 9, 13),
+    new THREE.MeshLambertMaterial({ color: TROUSERS, flatShading: true }),
+  );
+  pelvis.position.z = TORSO_BACK * 0.55;
+  hips.add(pelvis);
+
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(23, 24, 13),
     new THREE.MeshLambertMaterial({ color: SHIRT, flatShading: true }),
   );
-  hips.add(pelvis);
+  torso.position.set(0, 14, TORSO_BACK);
+  hips.add(torso);
+
+  /** Standing lean of the thighs. Without it the legs drop straight down out of sight. */
+  const THIGH_REST = 16;
 
   // Sized so hip height (~0.47 of the hull) minus thigh minus shin lands the feet near the
   // floor when standing.
@@ -93,7 +107,14 @@ export function createViewModel(): ViewModel {
       // them along with the camera. Driven by viewDuck rather than state.duck so the body and
       // the view move together - the simulation value would make the legs lead the camera
       // through the crouch ease.
-      hips.position.y = hullHeight(viewDuck) * 0.47;
+      const hull = hullHeight(viewDuck);
+      hips.position.y = hull * 0.47;
+
+      // The torso has to shrink with the hull, not just ride lower on it. At a fixed height a
+      // ducked torso reaches above the ducked eye line and floods the view from the inside.
+      const torsoScale = hull / PLAYER_HEIGHT;
+      torso.scale.y = torsoScale;
+      torso.position.y = 14 * torsoScale;
 
       const speed = vec3.horizontalLength(state.velocity);
 
@@ -102,26 +123,31 @@ export function createViewModel(): ViewModel {
       // folds the legs behind the player, out of view, which is exactly where you cannot see
       // them.
       if (state.sliding) {
-        // Lead leg extended out front, trailing leg tucked underneath - the classic slide
-        // pose, and unmistakable from a crouch when you glance down.
-        legs[0]?.hip.rotation.set(38 * DEG, 0, 0);
-        legs[0]?.knee.rotation.set(-12 * DEG, 0, 0);
-        legs[1]?.hip.rotation.set(-8 * DEG, 0, 0);
-        legs[1]?.knee.rotation.set(-115 * DEG, 0, 0);
+        // Lead leg thrown out front, trailing leg tucked underneath - the classic slide pose,
+        // and unmistakable from a crouch when you glance down.
+        legs[0]?.hip.rotation.set(52 * DEG, 0, 0);
+        legs[0]?.knee.rotation.set(-14 * DEG, 0, 0);
+        legs[1]?.hip.rotation.set(4 * DEG, 0, 0);
+        legs[1]?.knee.rotation.set(-118 * DEG, 0, 0);
+        torso.rotation.x = -10 * DEG; // lean back into the slide, gently - more crowds the view
         return;
       }
 
+      torso.rotation.x = 0;
+
       // Crouch folds both legs symmetrically; the walk cycle swings them out of phase.
-      const crouchBend = viewDuck * 55 * DEG;
+      const crouchBend = viewDuck * 48 * DEG;
+      const rest = THIGH_REST * DEG;
       const moving = speed > 20 && state.onGround;
       stride += moving ? speed * 0.00035 : -stride * 0.2;
 
       legs.forEach(({ hip, knee }, i) => {
         const phase = i === 0 ? stride : stride + Math.PI;
         const swing = moving ? Math.sin(phase) * 30 * DEG : 0;
-        hip.rotation.x = crouchBend + swing;
-        // Knees only ever bend one way: backwards.
-        knee.rotation.x = -crouchBend * 2 - Math.max(0, Math.sin(phase)) * 26 * DEG;
+        hip.rotation.x = rest + crouchBend + swing;
+        // Knees only ever bend one way: backwards. The rest lean is cancelled here so a
+        // standing leg hangs vertically from the knee down rather than kicking forward.
+        knee.rotation.x = -rest - crouchBend * 2 - Math.max(0, Math.sin(phase)) * 26 * DEG;
       });
     },
   };

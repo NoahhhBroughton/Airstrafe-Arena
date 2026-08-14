@@ -59,12 +59,13 @@ persistent memory of project progress across sessions.
   alternates A and D, so every strafe cycle fired one. Written up in `MOVEMENT_SPEC.md` — the
   general point is that no trigger on the strafe keys can coexist with air strafing.
 - **Slide** added: crouch while moving fast (from a run or through a landing) launches you to
-  `SLIDE_BOOST_SPEED` (750), held for 2 seconds before falling off. It **steers** toward where
-  you look rather than accelerating — an earlier version used `airAccelerate` and turned into
-  air strafing on the ground, where mouse technique built speed indefinitely. Downhill slides
-  still accelerate from slope gravity. Boost speed and turn rate are tunable in settings.
-- **First-person body added** (`viewmodel.ts`): blocky legs and pelvis, posed for standing,
-  walking, crouching and sliding. Crouching previously had no visual tell at all.
+  `SLIDE_BOOST_SPEED` (750), held for 2 seconds before falling off. It is **aimed with the mouse
+  alone** — movement keys do nothing while sliding, and the velocity snaps to your view
+  instantly. Two earlier versions are recorded in `MOVEMENT_SPEC.md`: accelerating with the air
+  cap (became air strafing on the ground) and rate-limited steering off WASD (felt indirect).
+  Downhill slides still accelerate from slope gravity. Boost speed is tunable in settings.
+- **First-person body added** (`viewmodel.ts`): blocky legs, pelvis and torso, posed for
+  standing, walking, crouching and sliding. Crouching previously had no visual tell at all.
 - **Air-crouch now visibly moves the camera.** The hull change and the eye-offset change cancel
   exactly, so the view used to stay perfectly still; the camera's duck now eases behind the
   hull's, which makes the pop visible. Cosmetic, render-time only.
@@ -99,6 +100,9 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
 - `AIR_WISH_SPEED_CAP` is now 75. It is the knob to reach for if strafing still doesn't feel
   right — acceleration is saturated, so this is the only thing that changes air control.
 - Verify the sensitivity match with a 360° test against CS rather than trusting it on paper.
+- The first-person body is greybox: flat-coloured boxes, no arms, no textures. Arms belong with
+  the weapon in Phase 4. Curved/tapered limbs were raised as an idea and would need bones or
+  skinning rather than nested boxes — deferred until there is a third-person model to match.
 
 ## Phase 2 — Test content
 - [ ] A few more surf ramps at different angles

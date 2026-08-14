@@ -12,7 +12,6 @@ import {
   AUTO_BHOP_ENABLED,
   SLIDE_BOOST_SPEED,
   SLIDE_ENABLED,
-  SLIDE_TURN_RATE,
   type MapSpot,
 } from "@airstrafe-arena/shared";
 import { defaultBinds, reconcileBinds, type ActionDef, type Binds } from "./keybinds.js";
@@ -42,7 +41,6 @@ export interface Settings {
 
   slide: boolean;
   slideBoostSpeed: number;
-  slideTurnRate: number;
 
   binds: Binds;
 }
@@ -58,7 +56,6 @@ export const DEFAULT_SETTINGS: Omit<Settings, "binds"> = {
   airWishSpeedCap: AIR_WISH_SPEED_CAP,
   slide: SLIDE_ENABLED,
   slideBoostSpeed: SLIDE_BOOST_SPEED,
-  slideTurnRate: SLIDE_TURN_RATE,
 };
 
 const STORAGE_KEY = "airstrafe-arena.settings";
@@ -75,7 +72,6 @@ const NUMERIC_BOUNDS: Record<string, Bounds> = {
   airAccel: { min: 1, max: 2000 },
   airWishSpeedCap: { min: 1, max: 500 },
   slideBoostSpeed: { min: 0, max: 3000 },
-  slideTurnRate: { min: 0, max: 720 },
 };
 
 function clampNumber(key: string, value: number, fallback: number): number {
