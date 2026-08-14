@@ -156,50 +156,56 @@ So: only clip when `dot(velocity, normal) < 0`. Otherwise back off along the nor
 the sweep. With this in place, bhopping down a 20° ramp compounds — 317 → 479 → 658 over two
 hops, instead of decaying to 290.
 
-## Lurch (momentum shifting)
+## Lurch — tried and removed
 
-Titanfall/Apex-style. Tap a strafe key mid-air and your momentum swings that way almost intact,
-rather than being nudged `AIR_WISH_SPEED_CAP` at a time while you bleed speed pointing sideways.
+Apex-style momentum shifting was built here and then removed after playtest. Recording why, so
+it is not rediscovered the hard way.
 
-| Constant | Value | Notes |
-|---|---|---|
-| `LURCH_MAX_ANGLE` | 50° | Most one lurch can turn the heading |
-| `LURCH_SPEED_RETENTION` | 0.99 | Redirecting should be nearly free — the cost is what felt bad |
-| `LURCH_COOLDOWN` | 0.35s | Keeps it a technique, not a steering wheel |
-| `LURCH_MIN_SPEED` | 150 | Below this there is no momentum worth shifting |
+It fired on a *fresh strafe press*, on the reasoning that air strafing holds a key and would
+therefore never trigger it. That reasoning is wrong: real air strafing **alternates A and D**,
+so every strafe cycle is a fresh press and every one of them lurched. Air strafing became
+unusable. The synthetic test that made it look clean held a single key for the whole flight,
+which is not how anyone plays.
 
-The implementation rotates horizontal velocity toward `wishDir` by up to `LURCH_MAX_ANGLE`,
-**spherically** — a linear blend between two headings shrinks the vector as it crosses, which
-would reintroduce exactly the speed loss this exists to remove. Vertical velocity is untouched.
-
-**It is edge triggered, and that is what makes it coexist with air strafing.** A lurch fires only
-when the strafe axis *changes* to a non-zero value. Air strafing holds one strafe key and turns
-the mouse, so the key state never changes and no lurch ever fires. Tapping is a distinct,
-deliberate act. This is why `lastRight` lives on the player state rather than in the client:
-reconciliation replay has to observe the same edges the original simulation did.
+The general lesson: there is no clean input edge to hang a redirect mechanic on while air
+strafing owns the same two keys. Anything similar needs a *different* input, not a cleverer
+trigger on the strafe keys.
 
 ## Slide
 
-Land holding crouch with speed and you slide instead of stopping.
+Crouch while moving fast enough and you slide. Two routes in, one rule: **on the ground,
+crouching, above `SLIDE_MIN_SPEED`** — which covers pressing crouch mid-run and landing with
+crouch already held.
 
 | Constant | Value | Notes |
 |---|---|---|
 | `SLIDE_MIN_SPEED` | 200 | Entry threshold |
 | `SLIDE_END_SPEED` | 120 | Below this the slide gives out |
-| `SLIDE_FRICTION` | 0.35 | Against `FRICTION` 4 — this is what makes a slide carry |
-| `SLIDE_STEER_ACCEL` | 0.25 × `GROUND_ACCEL` | You aim a slide, you do not drive it |
-| `SLIDE_STEER_SPEED` | 90 | Steering target speed, well under a run |
+| `SLIDE_GRACE_TIME` | 2s | Speed is untouched for this long before falloff begins |
+| `SLIDE_FRICTION` | 0.35 | Applied only after the grace window; against `FRICTION` 4 |
 
-Two details that carry the feel:
+**A slide is air strafing brought down to the ground.** It accelerates with `airAccelerate` and
+the same low airborne wishSpeed cap, not `groundAccelerate` — so pointing the mouse across your
+velocity compounds speed exactly as it does mid-air. Ground acceleration would instead haul you
+toward `MAX_GROUND_SPEED` and cap you there, which is the opposite of what a slide is for.
+
+For the first `SLIDE_GRACE_TIME` a slide is free: no friction at all, so the only things
+changing your speed are the slope and your own strafing. After that `SLIDE_FRICTION` starts
+taking it back, and the slide ends at `SLIDE_END_SPEED`.
+
+Two more details that carry the feel:
 
 1. **Gravity stays on while sliding**, projected onto the ground plane. Walking does not
    accelerate you downhill, but a slide should — so downhill slides build speed and uphill ones
    die. `SLIDE_FRICTION` has to *lose* to that pull or the mechanic inverts: drag is
    `friction × speed` against `GRAVITY × sin(angle)`, so 0.35 keeps a 20° slope (274 u/s²)
    winning at any slide speed under about 780.
-2. **Entry is decided after the move**, because "did we just land" is only known once the
-   integration has run. Crouching while *already* running is a crouch-walk, not a slide — a
-   slide has to be launched into.
+2. **Entry threshold sits well above the exit threshold** (200 against 120), and that gap is
+   load-bearing. Without it, a spent slide would restart itself on the next tick while crouch is
+   still held, flickering in and out. With it, a finished slide leaves you crouch-walking, which
+   `DUCK_SPEED_SCALE` caps at ~107 — far below the speed needed to slide again. Entry is
+   evaluated after the move, since it depends on where the player ended up and how fast they are
+   actually going once collisions have resolved.
 
 ## Crouch
 

@@ -20,6 +20,8 @@ import {
   MAX_GROUND_SPEED,
   PLAYER_DUCK_HEIGHT,
   PLAYER_HEIGHT,
+  SLIDE_GRACE_TIME,
+  SLIDE_MIN_SPEED,
   SKIN_WIDTH,
   TICK_DT,
 } from "./constants.js";
@@ -189,8 +191,7 @@ test("air acceleration saturates above 1/dt, so larger values are indistinguisha
   const steer = (airAccel: number) => {
     let s = start;
     for (let i = 0; i < 2; i++) {
-      // Lurch off: it also redirects on a strafe press, and would swamp what this measures.
-      s = movePlayer(s, input({ right: 1 }), emptyWorld, TICK_DT, { airAccel, lurch: false });
+      s = movePlayer(s, input({ right: 1 }), emptyWorld, TICK_DT, { airAccel });
     }
     return s.velocity.x;
   };
@@ -591,61 +592,26 @@ test("you cannot stand up inside a ceiling you crouched under", () => {
   assert.equal(state.onGround, true);
 });
 
-test("lurch redirects momentum on a strafe tap, keeping nearly all the speed", () => {
-  const start = {
-    ...createPlayerState({ x: 0, y: 1000, z: 0 }),
-    velocity: { x: 0, y: 0, z: -600 }, // travelling straight forward
-  };
-  const before = vec3.horizontalLength(start.velocity);
-
-  const after = movePlayer(start, input({ right: 1 }), emptyWorld, TICK_DT);
-  const speed = vec3.horizontalLength(after.velocity);
-
-  // Air acceleration alone would nudge sideways by at most AIR_WISH_SPEED_CAP per tick while
-  // bleeding forward speed. A lurch turns the vector instead, so the magnitude survives.
-  assert.ok(speed > before * 0.95, `lurch cost too much speed: ${before} -> ${speed}`);
-  assert.ok(after.velocity.x > 100, `momentum did not shift sideways: vx=${after.velocity.x}`);
-});
-
-test("lurch does not fire from a held strafe key, so air strafing is untouched", () => {
-  let state = {
-    ...createPlayerState({ x: 0, y: 1000, z: 0 }),
-    velocity: { x: 0, y: 0, z: -600 },
-    lastRight: 1, // already holding strafe-right from the previous tick
-  };
-  const before = vec3.clone(state.velocity);
-
-  state = movePlayer(state, input({ right: 1 }), emptyWorld, TICK_DT);
-
-  // Only ordinary air acceleration should have applied: a small sideways nudge, capped.
-  assert.ok(
-    state.velocity.x <= AIR_WISH_SPEED_CAP + 1e-6,
-    `a held key lurched: vx=${state.velocity.x}`,
-  );
-  assert.ok(Math.abs(state.velocity.z - before.z) < 1, "forward speed should be near untouched");
-});
-
-test("lurch is rate limited, so mashing strafe is not free steering", () => {
+test("alternating strafe keys mid-air only ever applies air acceleration", () => {
+  // Guards the reason lurch was removed. Air strafing alternates A and D every cycle, so any
+  // mechanic keyed on a "fresh strafe press" fires constantly during ordinary strafing rather
+  // than only on a deliberate tap. Nothing may redirect velocity faster than the air cap.
   let state = {
     ...createPlayerState({ x: 0, y: 4000, z: 0 }),
     velocity: { x: 0, y: 0, z: -600 },
   };
 
-  let lurches = 0;
-  for (let i = 0; i < 64; i++) {
-    // Alternate release / press every tick: the most aggressive mashing possible.
-    const right = i % 2 === 0 ? 1 : 0;
-    const previous = vec3.horizontalLength(state.velocity);
-    const previousX = state.velocity.x;
+  for (let i = 0; i < 128; i++) {
+    const previous = state.velocity;
+    // Release and re-press, the way a real strafe cycle does.
+    const right = i % 8 < 4 ? 1 : 0;
     state = movePlayer(state, input({ right }), emptyWorld, TICK_DT);
-    // A lurch swings the heading far harder than one tick of air accel can.
-    if (Math.abs(state.velocity.x - previousX) > AIR_WISH_SPEED_CAP + 1) lurches++;
-    assert.ok(vec3.horizontalLength(state.velocity) <= previous + 1, "lurch should not add speed");
+    const sidewaysDelta = Math.abs(state.velocity.x - previous.x);
+    assert.ok(
+      sidewaysDelta <= AIR_WISH_SPEED_CAP + 1e-6,
+      `velocity was redirected by ${sidewaysDelta} in one tick at tick ${i}`,
+    );
   }
-
-  // One second of frame-perfect mashing, at a 0.35s cooldown.
-  assert.ok(lurches <= 3, `cooldown did not hold: ${lurches} lurches in 64 ticks`);
-  assert.ok(lurches >= 1, "no lurch fired at all");
 });
 
 test("landing on crouch at speed starts a slide that carries", () => {
@@ -662,10 +628,81 @@ test("landing on crouch at speed starts a slide that carries", () => {
   for (let i = 0; i < 32; i++) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
   const carried = vec3.horizontalLength(state.velocity);
 
-  // Half a second of sliding should keep most of the speed. Normal friction (4, versus the
-  // slide's 0.35) would have taken far more of it by now.
-  assert.ok(carried > entry * 0.8, `slide bled too fast: ${entry} -> ${carried}`);
+  // Inside SLIDE_GRACE_TIME nothing takes speed at all - not friction, and on the flat not
+  // gravity either.
+  assert.ok(Math.abs(carried - entry) < 1e-6, `slide lost speed during grace: ${entry} -> ${carried}`);
   assert.equal(state.sliding, true);
+});
+
+test("slide speed holds for SLIDE_GRACE_TIME, then falls off", () => {
+  const world = flatGround();
+  let state: PlayerState = {
+    ...createPlayerState({ x: 0, y: 60, z: 0 }),
+    velocity: { x: 0, y: 0, z: -400 },
+  };
+  while (!state.onGround) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  const entry = vec3.horizontalLength(state.velocity);
+
+  // Just before the window closes.
+  const graceTicks = Math.floor(SLIDE_GRACE_TIME / TICK_DT) - 2;
+  for (let i = 0; i < graceTicks; i++) {
+    state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  }
+  const atGraceEnd = vec3.horizontalLength(state.velocity);
+  assert.ok(
+    Math.abs(atGraceEnd - entry) < 1e-6,
+    `lost speed inside the grace window: ${entry} -> ${atGraceEnd}`,
+  );
+
+  // And a second later friction has clearly bitten.
+  for (let i = 0; i < 64; i++) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  const afterFalloff = vec3.horizontalLength(state.velocity);
+  assert.ok(afterFalloff < atGraceEnd * 0.9, `no falloff after grace: ${atGraceEnd} -> ${afterFalloff}`);
+});
+
+test("strafing during a slide compounds speed, the same way it does mid-air", () => {
+  const world = flatGround();
+  const enter = (): PlayerState => {
+    let s: PlayerState = {
+      ...createPlayerState({ x: 0, y: 60, z: 0 }),
+      velocity: { x: 0, y: 0, z: -400 },
+    };
+    while (!s.onGround) s = movePlayer(s, input({ crouch: true }), world, TICK_DT);
+    return s;
+  };
+
+  let passive = enter();
+  let strafing = enter();
+  const entry = vec3.horizontalLength(strafing.velocity);
+
+  for (let i = 0; i < 100; i++) {
+    passive = movePlayer(passive, input({ crouch: true }), world, TICK_DT);
+    // Same optimal-angle strafe as air strafing: wishDir held near-perpendicular to velocity.
+    const sign = Math.floor(i / 12) % 2 === 0 ? 1 : -1;
+    const speed = Math.max(vec3.horizontalLength(strafing.velocity), 1);
+    const theta =
+      Math.acos(Math.min(Math.max(AIR_WISH_SPEED_CAP / (2 * speed), -1), 1)) * sign;
+    const dir = vec3.normalize({ x: strafing.velocity.x, y: 0, z: strafing.velocity.z });
+    const rx = dir.x * Math.cos(theta) - dir.z * Math.sin(theta);
+    const rz = dir.x * Math.sin(theta) + dir.z * Math.cos(theta);
+    strafing = movePlayer(
+      strafing,
+      input({ forward: 1, crouch: true, yaw: Math.atan2(-rx, -rz) }),
+      world,
+      TICK_DT,
+    );
+  }
+
+  // A slide uses airAccelerate, so the same mouse technique that builds speed in the air builds
+  // it on the ground. Ground acceleration would have capped both at MAX_GROUND_SPEED instead.
+  assert.ok(
+    vec3.horizontalLength(strafing.velocity) > entry,
+    `strafing a slide did not gain: ${entry} -> ${vec3.horizontalLength(strafing.velocity)}`,
+  );
+  assert.ok(
+    vec3.horizontalLength(strafing.velocity) > vec3.horizontalLength(passive.velocity),
+    "strafing should beat sliding passively",
+  );
 });
 
 test("a slide ends on releasing crouch, on jumping, and when it runs out of speed", () => {
@@ -693,15 +730,48 @@ test("a slide ends on releasing crouch, on jumping, and when it runs out of spee
   assert.equal(state.sliding, false, "slide never ran out of speed");
 });
 
-test("crouching while already running does not start a slide", () => {
+test("pressing crouch while running starts a slide", () => {
   const world = flatGround();
   let state = createPlayerState({ x: 0, y: 0, z: 0 });
   for (let i = 0; i < 128; i++) state = movePlayer(state, input({ forward: 1 }), world, TICK_DT);
   assert.equal(state.onGround, true);
+  assert.ok(vec3.horizontalLength(state.velocity) >= SLIDE_MIN_SPEED);
 
   state = movePlayer(state, input({ forward: 1, crouch: true }), world, TICK_DT);
-  // A slide has to be launched into, not switched on mid-stride.
+  assert.equal(state.sliding, true, "crouch while running should slide");
+});
+
+test("crouching too slowly to slide just crouches", () => {
+  const world = flatGround();
+  let state = createPlayerState({ x: 0, y: 0, z: 0 });
+  // Walk briefly, well short of SLIDE_MIN_SPEED - ground accel reaches it in about four ticks.
+  for (let i = 0; i < 3; i++) state = movePlayer(state, input({ forward: 1 }), world, TICK_DT);
+  const speed = vec3.horizontalLength(state.velocity);
+  assert.ok(speed < SLIDE_MIN_SPEED, `already too fast to test: ${speed}`);
+
+  state = movePlayer(state, input({ forward: 1, crouch: true }), world, TICK_DT);
   assert.equal(state.sliding, false);
+});
+
+test("a spent slide does not restart itself while crouch stays held", () => {
+  const world = flatGround();
+  let state = createPlayerState({ x: 0, y: 0, z: 0 });
+  for (let i = 0; i < 128; i++) state = movePlayer(state, input({ forward: 1 }), world, TICK_DT);
+  state = movePlayer(state, input({ forward: 1, crouch: true }), world, TICK_DT);
+  assert.equal(state.sliding, true);
+
+  // Ride it out, still holding both crouch and forward.
+  for (let i = 0; i < 1024 && state.sliding; i++) {
+    state = movePlayer(state, input({ forward: 1, crouch: true }), world, TICK_DT);
+  }
+  assert.equal(state.sliding, false, "slide never ended");
+
+  // The gap between SLIDE_MIN_SPEED and SLIDE_END_SPEED is what has to hold here: crouch-walk
+  // acceleration is capped well below the entry threshold, so it cannot flicker back on.
+  for (let i = 0; i < 256; i++) {
+    state = movePlayer(state, input({ forward: 1, crouch: true }), world, TICK_DT);
+    assert.equal(state.sliding, false, `slide restarted itself at tick ${i}`);
+  }
 });
 
 test("sliding downhill picks up speed; uphill it dies", () => {

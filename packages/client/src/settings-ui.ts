@@ -114,29 +114,9 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
     fields: [
       {
         kind: "toggle",
-        key: "lurch",
-        label: "Lurch",
-        hint: "Tap a strafe key mid-air to swing your momentum that way. Fires on a fresh press only, so holding strafe to air-strafe never triggers it.",
-      },
-      {
-        kind: "number",
-        key: "lurchMaxAngle",
-        label: "Lurch angle",
-        step: 5,
-        hint: "Degrees a single lurch can turn your heading.",
-      },
-      {
-        kind: "number",
-        key: "lurchRetention",
-        label: "Lurch retention",
-        step: 0.01,
-        hint: "Fraction of speed kept through a lurch. 1 is a free redirect.",
-      },
-      {
-        kind: "toggle",
         key: "slide",
         label: "Slide",
-        hint: "Land holding crouch with speed to slide instead of stopping. Downhill slides accelerate.",
+        hint: "Crouch while moving fast to slide instead of stopping. Downhill slides accelerate.",
       },
     ],
   },

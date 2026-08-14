@@ -10,9 +10,6 @@ import {
   AIR_ACCEL,
   AIR_WISH_SPEED_CAP,
   AUTO_BHOP_ENABLED,
-  LURCH_ENABLED,
-  LURCH_MAX_ANGLE,
-  LURCH_SPEED_RETENTION,
   SLIDE_ENABLED,
   type MapSpot,
 } from "@airstrafe-arena/shared";
@@ -41,9 +38,6 @@ export interface Settings {
   airAccel: number;
   airWishSpeedCap: number;
 
-  lurch: boolean;
-  lurchMaxAngle: number;
-  lurchRetention: number;
   slide: boolean;
 
   binds: Binds;
@@ -58,9 +52,6 @@ export const DEFAULT_SETTINGS: Omit<Settings, "binds"> = {
   autoBhop: AUTO_BHOP_ENABLED,
   airAccel: AIR_ACCEL,
   airWishSpeedCap: AIR_WISH_SPEED_CAP,
-  lurch: LURCH_ENABLED,
-  lurchMaxAngle: LURCH_MAX_ANGLE,
-  lurchRetention: LURCH_SPEED_RETENTION,
   slide: SLIDE_ENABLED,
 };
 
@@ -77,8 +68,6 @@ const NUMERIC_BOUNDS: Record<string, Bounds> = {
   fov: { min: 60, max: 140 },
   airAccel: { min: 1, max: 2000 },
   airWishSpeedCap: { min: 1, max: 500 },
-  lurchMaxAngle: { min: 0, max: 180 },
-  lurchRetention: { min: 0, max: 1 },
 };
 
 function clampNumber(key: string, value: number, fallback: number): number {

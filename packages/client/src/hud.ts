@@ -2,7 +2,13 @@
 // tune movement against (docs/ROADMAP.md Phase 1), and a speed graph makes it obvious whether a
 // bhop chain is gaining or bleeding speed in a way a single number never does.
 
-import { vec3, MAX_GROUND_SPEED, type MapSpot, type PlayerState } from "@airstrafe-arena/shared";
+import {
+  vec3,
+  MAX_GROUND_SPEED,
+  SLIDE_GRACE_TIME,
+  type MapSpot,
+  type PlayerState,
+} from "@airstrafe-arena/shared";
 import { describeToken, spotActionId } from "./keybinds.js";
 import type { SettingsStore } from "./settings.js";
 
@@ -114,8 +120,11 @@ export function createHud(
       const p = state.position;
       posEl.textContent = `${fmt(p.x)},${fmt(p.y)},${fmt(p.z)}`;
       if (state.sliding) {
-        groundEl.textContent = `slide (n.y ${state.groundNormal.y.toFixed(2)})`;
-        groundEl.style.color = "#f7c96a";
+        // Countdown to the falloff, so the grace window is visible while tuning it.
+        const left = Math.max(0, SLIDE_GRACE_TIME - state.slideTime);
+        groundEl.textContent =
+          left > 0 ? `slide (${left.toFixed(1)}s)` : `slide (falling off)`;
+        groundEl.style.color = left > 0 ? "#f7c96a" : "#f7a76a";
       } else if (state.onGround) {
         groundEl.textContent = `ground (n.y ${state.groundNormal.y.toFixed(2)})${
           state.duck > 0 ? " ducked" : ""

@@ -121,9 +121,6 @@ async function main(): Promise<void> {
       autoBhop: s.autoBhop,
       airAccel: s.airAccel,
       airWishSpeedCap: s.airWishSpeedCap,
-      lurch: s.lurch,
-      lurchMaxAngle: s.lurchMaxAngle,
-      lurchRetention: s.lurchRetention,
       slide: s.slide,
     };
 
