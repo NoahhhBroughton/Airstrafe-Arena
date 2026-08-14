@@ -52,6 +52,13 @@ persistent memory of project progress across sessions.
 - **Ramp slide implemented.** Landing projects velocity onto the ground plane instead of zeroing
   vertical velocity, so dropping onto a descending ramp converts fall speed into speed along it.
 
+- **Ramp slide fixed properly.** The landing conversion was already correct, but every *jump*
+  off a slope was being clipped by the slope it was leaving, destroying it. Downhill bhop now
+  compounds (317 → 479 → 658 over two hops instead of decaying to 290).
+- **Lurch (momentum shifting)** added, Apex-style, keeping ~99% of speed through a redirect.
+  Edge-triggered on a strafe tap so air strafing is untouched.
+- **Slide** added: land holding crouch with speed, keep it, steer it, and accelerate downhill.
+
 ### Scope added during Phase 1 (not in the original plan)
 - Settings screen with live movement tuning, Source-1:1 sensitivity, raw input, FOV.
 - Rebindable controls.
@@ -60,6 +67,12 @@ persistent memory of project progress across sessions.
   most real bhop maps. Flagging in case other base mechanics are missing from the plan rather
   than deliberately deferred — **surf ramp entry/exit while ducked is untested**, and long-jump
   (crouch + jump timing) has not been considered.
+- **Lurch and slide.** Both are Titanfall/Apex-family tech, which the roadmap explicitly parks in
+  Phase 6 ("do not start earlier") alongside wallrunning. They were requested during Phase 1 and
+  built, so that boundary has moved. Wallrunning is still deferred. Worth deciding explicitly
+  whether Phase 6 now means "wallrunning only" or whether more Apex tech is expected earlier,
+  since each addition compounds the tuning surface — which is precisely why the roadmap wanted
+  them serialised.
 
 ### Still open for the playtest
 Measured as working but not judged as *feeling* right — decide at the keyboard, then update

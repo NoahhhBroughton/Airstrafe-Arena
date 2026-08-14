@@ -116,8 +116,16 @@ async function main(): Promise<void> {
     smoothedFps += (1 / Math.max(frameDt, 1e-6) - smoothedFps) * 0.1;
 
     // Read tuning fresh every frame so the settings panel's effect is immediate.
-    const { autoBhop, airAccel, airWishSpeedCap } = settings.current;
-    const moveOptions = { autoBhop, airAccel, airWishSpeedCap };
+    const s = settings.current;
+    const moveOptions = {
+      autoBhop: s.autoBhop,
+      airAccel: s.airAccel,
+      airWishSpeedCap: s.airWishSpeedCap,
+      lurch: s.lurch,
+      lurchMaxAngle: s.lurchMaxAngle,
+      lurchRetention: s.lurchRetention,
+      slide: s.slide,
+    };
 
     accumulator += frameDt;
     let ticks = 0;

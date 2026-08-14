@@ -141,6 +141,66 @@ kills auto-bhop the moment the player points downhill. After moving, if the play
 did not jump, and is not rising, probe again as far as `STEP_HEIGHT` to reattach. This is
 Source's step-down, and it is what keeps you glued to slopes and stairs.
 
+### Never clip against a surface you are leaving
+
+`clipVelocity` removes the velocity component along a normal. Applied to a contact you are
+moving *away* from, it removes the component heading **out** of the surface — which is the
+opposite of what clipping is for.
+
+This mattered enormously. Jumping off a slope, the upward sweep grazes the ramp underfoot and
+reports a zero-fraction contact; clipping against it turned a `+375` vertical into `−110` and
+cut horizontal speed from 479 to 302 in a single tick. Every jump off a slope destroyed itself,
+which is why bhopping downhill *lost* speed even though each landing was correctly paying out.
+
+So: only clip when `dot(velocity, normal) < 0`. Otherwise back off along the normal and continue
+the sweep. With this in place, bhopping down a 20° ramp compounds — 317 → 479 → 658 over two
+hops, instead of decaying to 290.
+
+## Lurch (momentum shifting)
+
+Titanfall/Apex-style. Tap a strafe key mid-air and your momentum swings that way almost intact,
+rather than being nudged `AIR_WISH_SPEED_CAP` at a time while you bleed speed pointing sideways.
+
+| Constant | Value | Notes |
+|---|---|---|
+| `LURCH_MAX_ANGLE` | 50° | Most one lurch can turn the heading |
+| `LURCH_SPEED_RETENTION` | 0.99 | Redirecting should be nearly free — the cost is what felt bad |
+| `LURCH_COOLDOWN` | 0.35s | Keeps it a technique, not a steering wheel |
+| `LURCH_MIN_SPEED` | 150 | Below this there is no momentum worth shifting |
+
+The implementation rotates horizontal velocity toward `wishDir` by up to `LURCH_MAX_ANGLE`,
+**spherically** — a linear blend between two headings shrinks the vector as it crosses, which
+would reintroduce exactly the speed loss this exists to remove. Vertical velocity is untouched.
+
+**It is edge triggered, and that is what makes it coexist with air strafing.** A lurch fires only
+when the strafe axis *changes* to a non-zero value. Air strafing holds one strafe key and turns
+the mouse, so the key state never changes and no lurch ever fires. Tapping is a distinct,
+deliberate act. This is why `lastRight` lives on the player state rather than in the client:
+reconciliation replay has to observe the same edges the original simulation did.
+
+## Slide
+
+Land holding crouch with speed and you slide instead of stopping.
+
+| Constant | Value | Notes |
+|---|---|---|
+| `SLIDE_MIN_SPEED` | 200 | Entry threshold |
+| `SLIDE_END_SPEED` | 120 | Below this the slide gives out |
+| `SLIDE_FRICTION` | 0.35 | Against `FRICTION` 4 — this is what makes a slide carry |
+| `SLIDE_STEER_ACCEL` | 0.25 × `GROUND_ACCEL` | You aim a slide, you do not drive it |
+| `SLIDE_STEER_SPEED` | 90 | Steering target speed, well under a run |
+
+Two details that carry the feel:
+
+1. **Gravity stays on while sliding**, projected onto the ground plane. Walking does not
+   accelerate you downhill, but a slide should — so downhill slides build speed and uphill ones
+   die. `SLIDE_FRICTION` has to *lose* to that pull or the mechanic inverts: drag is
+   `friction × speed` against `GRAVITY × sin(angle)`, so 0.35 keeps a 20° slope (274 u/s²)
+   winning at any slide speed under about 780.
+2. **Entry is decided after the move**, because "did we just land" is only known once the
+   integration has run. Crouching while *already* running is a crouch-walk, not a slide — a
+   slide has to be launched into.
+
 ## Crouch
 
 | Constant | Value | Notes |

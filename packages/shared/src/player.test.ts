@@ -9,6 +9,7 @@ import {
   movePlayer,
   wishDirection,
   type PlayerInput,
+  type PlayerState,
 } from "./player.js";
 import {
   AIR_WISH_SPEED_CAP,
@@ -188,7 +189,8 @@ test("air acceleration saturates above 1/dt, so larger values are indistinguisha
   const steer = (airAccel: number) => {
     let s = start;
     for (let i = 0; i < 2; i++) {
-      s = movePlayer(s, input({ right: 1 }), emptyWorld, TICK_DT, { airAccel });
+      // Lurch off: it also redirects on a strafe press, and would swamp what this measures.
+      s = movePlayer(s, input({ right: 1 }), emptyWorld, TICK_DT, { airAccel, lurch: false });
     }
     return s.velocity.x;
   };
@@ -274,6 +276,76 @@ test("auto-bhop keeps chaining while heading down a slope", () => {
     previousY = state.velocity.y;
   }
   assert.ok(jumps > 2, `only ${jumps} jumps fired while bhopping downhill`);
+});
+
+test("jumping off a slope is not clipped by the slope being left", () => {
+  const world = tiltedPlane(20);
+  let state = createPlayerState(vec3.zero());
+  for (let i = 0; i < 64; i++) {
+    state = movePlayer(state, input({ forward: 1, yaw: DOWNHILL_YAW }), world, TICK_DT);
+  }
+
+  const before = vec3.horizontalLength(state.velocity);
+  const after = movePlayer(state, input({ forward: 1, jump: true, yaw: DOWNHILL_YAW }), world, TICK_DT);
+
+  // The sweep grazes the ramp underfoot on the way up. Clipping against a surface you are
+  // moving *away* from removes the component leaving it, which used to convert the jump's
+  // upward velocity into downward and scrub a third of the horizontal speed with it.
+  assert.ok(
+    after.velocity.y > JUMP_IMPULSE * 0.9,
+    `jump off a slope only reached vy=${after.velocity.y}`,
+  );
+  assert.ok(
+    vec3.horizontalLength(after.velocity) > before * 0.99,
+    `jumping off a slope cost speed: ${before} -> ${vec3.horizontalLength(after.velocity)}`,
+  );
+});
+
+test("landing on a descending slope converts fall speed into speed along it", () => {
+  const world = tiltedPlane(20);
+  // Airborne above the plane, moving downhill and falling hard.
+  let state = {
+    ...createPlayerState({ x: 0, y: 400, z: 0 }),
+    velocity: { x: -320, y: 0, z: 0 },
+  };
+
+  let impact: { before: number; after: number } | null = null;
+  for (let i = 0; i < 256 && !impact; i++) {
+    const previous = state;
+    state = movePlayer(state, input({ yaw: DOWNHILL_YAW }), world, TICK_DT);
+    if (!previous.onGround && state.onGround) {
+      impact = {
+        before: vec3.horizontalLength(previous.velocity),
+        after: vec3.horizontalLength(state.velocity),
+      };
+    }
+  }
+
+  assert.ok(impact, "never landed");
+  // Projecting the fall onto the ramp plane redirects it along the surface - this is the
+  // ramp-slide payout, and the reason landing must never just zero velocity.y.
+  assert.ok(
+    impact.after > impact.before * 1.2,
+    `ramp slide paid nothing: ${impact.before} -> ${impact.after}`,
+  );
+});
+
+test("bhopping down a slope compounds speed rather than bleeding it", () => {
+  const world = tiltedPlane(20);
+  let state = createPlayerState(vec3.zero());
+  for (let i = 0; i < 64; i++) {
+    state = movePlayer(state, input({ forward: 1, yaw: DOWNHILL_YAW }), world, TICK_DT);
+  }
+  const entry = vec3.horizontalLength(state.velocity);
+
+  for (let i = 0; i < 256; i++) {
+    state = movePlayer(state, input({ forward: 1, jump: true, yaw: DOWNHILL_YAW }), world, TICK_DT);
+  }
+
+  assert.ok(
+    vec3.horizontalLength(state.velocity) > entry * 1.5,
+    `downhill bhop lost speed: ${entry} -> ${vec3.horizontalLength(state.velocity)}`,
+  );
 });
 
 test("walking up a slope climbs it without ever leaving the ground", () => {
@@ -517,6 +589,152 @@ test("you cannot stand up inside a ceiling you crouched under", () => {
 
   assert.equal(state.duck, 1, "stood up into a ceiling that has no room for it");
   assert.equal(state.onGround, true);
+});
+
+test("lurch redirects momentum on a strafe tap, keeping nearly all the speed", () => {
+  const start = {
+    ...createPlayerState({ x: 0, y: 1000, z: 0 }),
+    velocity: { x: 0, y: 0, z: -600 }, // travelling straight forward
+  };
+  const before = vec3.horizontalLength(start.velocity);
+
+  const after = movePlayer(start, input({ right: 1 }), emptyWorld, TICK_DT);
+  const speed = vec3.horizontalLength(after.velocity);
+
+  // Air acceleration alone would nudge sideways by at most AIR_WISH_SPEED_CAP per tick while
+  // bleeding forward speed. A lurch turns the vector instead, so the magnitude survives.
+  assert.ok(speed > before * 0.95, `lurch cost too much speed: ${before} -> ${speed}`);
+  assert.ok(after.velocity.x > 100, `momentum did not shift sideways: vx=${after.velocity.x}`);
+});
+
+test("lurch does not fire from a held strafe key, so air strafing is untouched", () => {
+  let state = {
+    ...createPlayerState({ x: 0, y: 1000, z: 0 }),
+    velocity: { x: 0, y: 0, z: -600 },
+    lastRight: 1, // already holding strafe-right from the previous tick
+  };
+  const before = vec3.clone(state.velocity);
+
+  state = movePlayer(state, input({ right: 1 }), emptyWorld, TICK_DT);
+
+  // Only ordinary air acceleration should have applied: a small sideways nudge, capped.
+  assert.ok(
+    state.velocity.x <= AIR_WISH_SPEED_CAP + 1e-6,
+    `a held key lurched: vx=${state.velocity.x}`,
+  );
+  assert.ok(Math.abs(state.velocity.z - before.z) < 1, "forward speed should be near untouched");
+});
+
+test("lurch is rate limited, so mashing strafe is not free steering", () => {
+  let state = {
+    ...createPlayerState({ x: 0, y: 4000, z: 0 }),
+    velocity: { x: 0, y: 0, z: -600 },
+  };
+
+  let lurches = 0;
+  for (let i = 0; i < 64; i++) {
+    // Alternate release / press every tick: the most aggressive mashing possible.
+    const right = i % 2 === 0 ? 1 : 0;
+    const previous = vec3.horizontalLength(state.velocity);
+    const previousX = state.velocity.x;
+    state = movePlayer(state, input({ right }), emptyWorld, TICK_DT);
+    // A lurch swings the heading far harder than one tick of air accel can.
+    if (Math.abs(state.velocity.x - previousX) > AIR_WISH_SPEED_CAP + 1) lurches++;
+    assert.ok(vec3.horizontalLength(state.velocity) <= previous + 1, "lurch should not add speed");
+  }
+
+  // One second of frame-perfect mashing, at a 0.35s cooldown.
+  assert.ok(lurches <= 3, `cooldown did not hold: ${lurches} lurches in 64 ticks`);
+  assert.ok(lurches >= 1, "no lurch fired at all");
+});
+
+test("landing on crouch at speed starts a slide that carries", () => {
+  const world = flatGround();
+  let state = {
+    ...createPlayerState({ x: 0, y: 60, z: 0 }),
+    velocity: { x: 0, y: 0, z: -400 },
+  };
+
+  while (!state.onGround) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  assert.equal(state.sliding, true, "landing on crouch with speed should start a slide");
+
+  const entry = vec3.horizontalLength(state.velocity);
+  for (let i = 0; i < 32; i++) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  const carried = vec3.horizontalLength(state.velocity);
+
+  // Half a second of sliding should keep most of the speed. Normal friction (4, versus the
+  // slide's 0.35) would have taken far more of it by now.
+  assert.ok(carried > entry * 0.8, `slide bled too fast: ${entry} -> ${carried}`);
+  assert.equal(state.sliding, true);
+});
+
+test("a slide ends on releasing crouch, on jumping, and when it runs out of speed", () => {
+  const world = flatGround();
+  const slideStart = (): PlayerState => {
+    let s: PlayerState = {
+      ...createPlayerState({ x: 0, y: 60, z: 0 }),
+      velocity: { x: 0, y: 0, z: -400 },
+    };
+    while (!s.onGround) s = movePlayer(s, input({ crouch: true }), world, TICK_DT);
+    return s;
+  };
+
+  assert.equal(movePlayer(slideStart(), input(), world, TICK_DT).sliding, false, "released crouch");
+  assert.equal(
+    movePlayer(slideStart(), input({ crouch: true, jump: true }), world, TICK_DT).sliding,
+    false,
+    "jumped out of the slide",
+  );
+
+  let state = slideStart();
+  for (let i = 0; i < 2048 && state.sliding; i++) {
+    state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  }
+  assert.equal(state.sliding, false, "slide never ran out of speed");
+});
+
+test("crouching while already running does not start a slide", () => {
+  const world = flatGround();
+  let state = createPlayerState({ x: 0, y: 0, z: 0 });
+  for (let i = 0; i < 128; i++) state = movePlayer(state, input({ forward: 1 }), world, TICK_DT);
+  assert.equal(state.onGround, true);
+
+  state = movePlayer(state, input({ forward: 1, crouch: true }), world, TICK_DT);
+  // A slide has to be launched into, not switched on mid-stride.
+  assert.equal(state.sliding, false);
+});
+
+test("sliding downhill picks up speed; uphill it dies", () => {
+  const downhill = tiltedPlane(20);
+  const enter = (yaw: number): PlayerState => {
+    let s: PlayerState = {
+      ...createPlayerState({ x: 0, y: 60, z: 0 }),
+      velocity: yaw === DOWNHILL_YAW ? { x: -400, y: 0, z: 0 } : { x: 400, y: 0, z: 0 },
+    };
+    while (!s.onGround) s = movePlayer(s, input({ crouch: true, yaw }), downhill, TICK_DT);
+    return s;
+  };
+
+  let down = enter(DOWNHILL_YAW);
+  const downEntry = vec3.horizontalLength(down.velocity);
+  for (let i = 0; i < 64; i++) {
+    down = movePlayer(down, input({ crouch: true, yaw: DOWNHILL_YAW }), downhill, TICK_DT);
+  }
+  // Gravity along the surface still applies while sliding, unlike while walking.
+  assert.ok(
+    vec3.horizontalLength(down.velocity) > downEntry,
+    `downhill slide did not accelerate: ${downEntry} -> ${vec3.horizontalLength(down.velocity)}`,
+  );
+
+  let up = enter(UPHILL_YAW);
+  const upEntry = vec3.horizontalLength(up.velocity);
+  for (let i = 0; i < 64; i++) {
+    up = movePlayer(up, input({ crouch: true, yaw: UPHILL_YAW }), downhill, TICK_DT);
+  }
+  assert.ok(
+    vec3.horizontalLength(up.velocity) < upEntry,
+    `uphill slide did not decay: ${upEntry} -> ${vec3.horizontalLength(up.velocity)}`,
+  );
 });
 
 test("falling through empty space accelerates at exactly GRAVITY", () => {

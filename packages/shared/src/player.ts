@@ -23,11 +23,17 @@ import {
   DUCK_SPEED_SCALE,
   DUCK_TRANSITION_TIME,
   GRAVITY,
+  GROUND_ACCEL,
   GROUND_CHECK_DIST,
   GROUND_NORMAL_MIN_Y,
   GROUND_PROBE_LIFT,
   GROUND_PROBE_SHRINK,
   JUMP_IMPULSE,
+  LURCH_COOLDOWN,
+  LURCH_ENABLED,
+  LURCH_MAX_ANGLE,
+  LURCH_MIN_SPEED,
+  LURCH_SPEED_RETENTION,
   MAX_CLIP_PLANES,
   MAX_GROUND_SPEED,
   MAX_MOVE_ITERATIONS,
@@ -36,6 +42,12 @@ import {
   PLAYER_EYE_HEIGHT,
   PLAYER_HEIGHT,
   SKIN_WIDTH,
+  SLIDE_ENABLED,
+  SLIDE_END_SPEED,
+  SLIDE_FRICTION,
+  SLIDE_MIN_SPEED,
+  SLIDE_STEER_ACCEL,
+  SLIDE_STEER_SPEED,
   STEP_HEIGHT,
 } from "./constants.js";
 
@@ -60,6 +72,17 @@ export interface PlayerState {
    * the camera teleporting.
    */
   duck: number;
+  /** Currently sliding. Entered by landing on crouch with speed; see MOVEMENT_SPEC.md. */
+  sliding: boolean;
+  /**
+   * Strafe axis on the previous tick. Lurch fires on the *edge* of a strafe press, so the
+   * previous value has to survive into the next tick - and has to be part of the state, not a
+   * client-side detail, or reconciliation replay would see different edges than the original
+   * simulation did.
+   */
+  lastRight: number;
+  /** Seconds until another lurch may fire. */
+  lurchCooldown: number;
 }
 
 export interface PlayerInput {
@@ -85,6 +108,10 @@ export interface MoveOptions {
   autoBhop?: boolean;
   airAccel?: number;
   airWishSpeedCap?: number;
+  lurch?: boolean;
+  lurchMaxAngle?: number;
+  lurchRetention?: number;
+  slide?: boolean;
 }
 
 export function createPlayerState(position: Vec3): PlayerState {
@@ -95,7 +122,51 @@ export function createPlayerState(position: Vec3): PlayerState {
     groundNormal: vec3.up(),
     jumpHeld: false,
     duck: 0,
+    sliding: false,
+    lastRight: 0,
+    lurchCooldown: 0,
   };
+}
+
+/**
+ * Rotate horizontal velocity toward wishDir, keeping (almost) all of its magnitude.
+ *
+ * Air acceleration can only add `airWishSpeed` per tick along wishDir, so redirecting momentum
+ * with it means spending a long time pointing away from where you are going and bleeding speed
+ * the whole way. A lurch instead *turns* the existing velocity vector: the speed survives, only
+ * the heading changes. Capped per event and behind a cooldown, so it reads as a deliberate
+ * technique rather than free steering.
+ */
+function applyLurch(velocity: Vec3, wishDir: Vec3, maxAngleDeg: number, retention: number): Vec3 {
+  const horizontal = { x: velocity.x, y: 0, z: velocity.z };
+  const speed = vec3.length(horizontal);
+  if (speed < LURCH_MIN_SPEED) return velocity;
+
+  const from = vec3.scale(horizontal, 1 / speed);
+  const cos = Math.min(Math.max(vec3.dot(from, wishDir), -1), 1);
+  const angle = Math.acos(cos);
+  const maxAngle = (maxAngleDeg * Math.PI) / 180;
+  if (angle < 1e-4) return velocity;
+
+  const t = Math.min(1, maxAngle / angle);
+  // Spherical interpolation between the two headings, so the turn is along the arc rather than
+  // through the middle - a linear blend would shrink the vector as it crosses.
+  const sinTotal = Math.sin(angle);
+  let direction: Vec3;
+  if (sinTotal < 1e-6) {
+    direction = wishDir;
+  } else {
+    const a = Math.sin((1 - t) * angle) / sinTotal;
+    const b = Math.sin(t * angle) / sinTotal;
+    direction = vec3.normalize({
+      x: from.x * a + wishDir.x * b,
+      y: 0,
+      z: from.z * a + wishDir.z * b,
+    });
+  }
+
+  const kept = speed * retention;
+  return { x: direction.x * kept, y: velocity.y, z: direction.z * kept };
 }
 
 /** Total collision height at a given duck amount. */
@@ -269,9 +340,10 @@ function slideMove(
       break;
     }
 
-    // Only a surface we are moving *into* can stop us. A surface we are sliding along - most
-    // often the floor, during ordinary walking - is contact without obstruction.
-    if (vec3.dot(vel, hit.normal) < -EPSILON) blocked = true;
+    // Only a surface we are moving *into* can stop us. A surface we are sliding along, or
+    // actively leaving, is contact without obstruction.
+    const opposing = vec3.dot(vel, hit.normal) < -EPSILON;
+    if (opposing) blocked = true;
 
     if (hit.fraction > 0) {
       pos = vec3.scaleAndAdd(pos, delta, hit.fraction);
@@ -283,6 +355,13 @@ function slideMove(
     // and leave the player stopped dead partway down a ramp.
     pos = vec3.scaleAndAdd(pos, hit.normal, SKIN_WIDTH);
     timeLeft -= timeLeft * hit.fraction;
+
+    // A contact we are moving away from must not touch the velocity. Clipping it would remove
+    // the component heading *out* of the surface - which is how jumping off a slope used to
+    // destroy itself: the sweep grazed the ramp underfoot, and clipping against it turned the
+    // jump's +375 vertical into -110 and cut horizontal speed from 479 to 302. Back off and
+    // carry on instead.
+    if (!opposing) continue;
 
     if (planes.length >= MAX_CLIP_PLANES) {
       vel = vec3.zero();
@@ -424,18 +503,57 @@ export function movePlayer(
     Math.hypot(input.forward, input.right),
   );
 
+  // A slide runs until the player stands up, jumps, leaves the ground, or runs out of
+  // momentum. Entering one is decided at the end of the tick, since landing is only known
+  // after the move - see step 8.
+  const slideAllowed = options.slide ?? SLIDE_ENABLED;
+  let sliding =
+    state.sliding && slideAllowed && input.crouch && !jumped && onGround;
+  if (sliding && vec3.horizontalLength(velocity) < SLIDE_END_SPEED) sliding = false;
+
+  let lurchCooldown = Math.max(0, state.lurchCooldown - dt);
+
   if (onGround) {
-    // Ducking slows you down, but only on the ground. Applying it airborne would make a
-    // crouch-jump cost air control, turning a movement technique into a penalty.
-    const duckScale = 1 - duck * (1 - DUCK_SPEED_SCALE);
-    velocity = applyFriction(velocity, dt);
-    velocity = groundAccelerate(
-      velocity,
-      wishDir,
-      MAX_GROUND_SPEED * inputMagnitude * duckScale,
-      dt,
-    );
+    if (sliding) {
+      // Barely any friction, and only enough acceleration to aim the slide. Gravity along the
+      // surface is applied later, which is what makes a downhill slide pick up speed.
+      velocity = applyFriction(velocity, dt, SLIDE_FRICTION);
+      velocity = groundAccelerate(
+        velocity,
+        wishDir,
+        SLIDE_STEER_SPEED * inputMagnitude,
+        dt,
+        GROUND_ACCEL * SLIDE_STEER_ACCEL,
+      );
+    } else {
+      // Ducking slows you down, but only on the ground. Applying it airborne would make a
+      // crouch-jump cost air control, turning a movement technique into a penalty.
+      const duckScale = 1 - duck * (1 - DUCK_SPEED_SCALE);
+      velocity = applyFriction(velocity, dt);
+      velocity = groundAccelerate(
+        velocity,
+        wishDir,
+        MAX_GROUND_SPEED * inputMagnitude * duckScale,
+        dt,
+      );
+    }
   } else {
+    // Lurch fires on a fresh strafe press only. Holding a strafe key - which is what air
+    // strafing does - never re-triggers it, so the two mechanics coexist untouched.
+    const freshStrafe = input.right !== 0 && input.right !== state.lastRight;
+    if ((options.lurch ?? LURCH_ENABLED) && freshStrafe && lurchCooldown <= 0) {
+      const lurched = applyLurch(
+        velocity,
+        wishDir,
+        options.lurchMaxAngle ?? LURCH_MAX_ANGLE,
+        options.lurchRetention ?? LURCH_SPEED_RETENTION,
+      );
+      if (lurched !== velocity) {
+        velocity = lurched;
+        lurchCooldown = LURCH_COOLDOWN;
+      }
+    }
+
     velocity = airAccelerate(
       velocity,
       wishDir,
@@ -449,6 +567,14 @@ export function movePlayer(
   //    by g*dt^2/2 per tick; splitting it makes the arc match the analytic height instead, so
   //    JUMP_IMPULSE/GRAVITY tuning means what MOVEMENT_SPEC.md says it means.
   if (!onGround) velocity.y -= GRAVITY * dt * 0.5;
+
+  // Sliding leaves gravity switched on, projected onto the surface. Walking does not - you do
+  // not accelerate strolling down a hill - but a slide is exactly the case where the slope
+  // should pull you, so a downhill slide builds speed and an uphill one dies.
+  if (onGround && sliding && ground) {
+    const pull = clipVelocity({ x: 0, y: -GRAVITY * dt, z: 0 }, ground.normal);
+    velocity = vec3.add(velocity, pull);
+  }
 
   // 6. Integrate.
   const moved = onGround
@@ -495,6 +621,21 @@ export function movePlayer(
     velocity = clipVelocity(velocity, landedProbe.normal);
   }
 
+  // 8. Enter a slide. Only decidable here, because "did we just land" is only known after the
+  //    move. Landing on crouch with speed slides; crouching while already running does not -
+  //    a slide has to be launched into, which is what makes it a technique.
+  if (
+    slideAllowed &&
+    input.crouch &&
+    !jumped &&
+    landed &&
+    !wasOnGround &&
+    vec3.horizontalLength(velocity) >= SLIDE_MIN_SPEED
+  ) {
+    sliding = true;
+  }
+  sliding = sliding && landed;
+
   const speed = vec3.length(velocity);
   if (speed > MAX_VELOCITY) velocity = vec3.scale(velocity, MAX_VELOCITY / speed);
 
@@ -505,5 +646,8 @@ export function movePlayer(
     groundNormal: landedProbe?.normal ?? vec3.up(),
     jumpHeld: input.jump,
     duck,
+    sliding,
+    lastRight: input.right,
+    lurchCooldown,
   };
 }

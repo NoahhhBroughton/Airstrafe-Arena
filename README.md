@@ -30,12 +30,19 @@ Then open the printed URL and click the canvas to lock the mouse.
 |---|---|
 | `WASD` | move |
 | `Space` | jump — hold it to keep bhopping (auto-bhop is on by default) |
-| `Left Ctrl` | crouch — duck mid-jump to clear 18 more units (crouch-jump) |
+| `Left Ctrl` | crouch — duck mid-jump for extra height, or land on it at speed to slide |
 | `1` / `2` / `3` | teleport to the spawn / bhop staircase / surf platform |
 | `R` | respawn |
 | `Esc` | settings |
 
 All of these are rebindable — see below.
+
+**Movement tech.** Beyond bhop and surf: **lurch** (tap a strafe key mid-air to swing your
+momentum that way, keeping ~99% of your speed — it fires on a fresh press only, so holding
+strafe to air-strafe never triggers it), **crouch-jump** (duck mid-jump to clear 18 more units),
+**slide** (land holding crouch with speed; downhill slides accelerate), and **ramp slide**
+(landing on a descending slope converts your fall into speed along it, so bhopping downhill
+compounds). All toggleable and tunable in the settings screen.
 
 The HUD's speed graph is the main tuning instrument: the dashed line is `MAX_GROUND_SPEED`, and
 the trace turns blue above it — anything up there came from air strafing.

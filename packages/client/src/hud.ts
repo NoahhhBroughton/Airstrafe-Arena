@@ -113,10 +113,18 @@ export function createHud(
       velEl.textContent = `${fmt(v.x)},${fmt(v.y)},${fmt(v.z)}`;
       const p = state.position;
       posEl.textContent = `${fmt(p.x)},${fmt(p.y)},${fmt(p.z)}`;
-      groundEl.textContent = state.onGround
-        ? `ground (n.y ${state.groundNormal.y.toFixed(2)})`
-        : "air";
-      groundEl.style.color = state.onGround ? "#7bd88f" : "#7aa2f7";
+      if (state.sliding) {
+        groundEl.textContent = `slide (n.y ${state.groundNormal.y.toFixed(2)})`;
+        groundEl.style.color = "#f7c96a";
+      } else if (state.onGround) {
+        groundEl.textContent = `ground (n.y ${state.groundNormal.y.toFixed(2)})${
+          state.duck > 0 ? " ducked" : ""
+        }`;
+        groundEl.style.color = "#7bd88f";
+      } else {
+        groundEl.textContent = state.duck > 0 ? "air ducked" : "air";
+        groundEl.style.color = "#7aa2f7";
+      }
       fpsEl.textContent = fps.toFixed(0);
       // Dim the whole readout while the settings menu is up, so it doesn't compete with it.
       root.style.opacity = locked ? "1" : "0.25";

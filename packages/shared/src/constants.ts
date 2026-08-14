@@ -87,6 +87,65 @@ export const DUCK_TRANSITION_TIME = 0.2;
 /** Ducked movement speed, as a fraction of MAX_GROUND_SPEED. Source uses about a third. */
 export const DUCK_SPEED_SCALE = 1 / 3;
 
+// --- Lurch (momentum shifting) ------------------------------------------------------------
+//
+// Titanfall/Apex-style: tap a strafe key mid-air and your momentum swings that way, nearly
+// intact, instead of being nudged 75 u/s at a time by air acceleration.
+//
+// It is deliberately *edge* triggered - it fires on a fresh strafe press, not on a held key.
+// That is what lets it coexist with air strafing: strafing holds one direction and turns the
+// mouse, so the key state never changes and no lurch fires. Tapping is a distinct, deliberate
+// act, and the cooldown keeps it a technique rather than free continuous steering.
+
+export const LURCH_ENABLED = true;
+
+/** Most a single lurch can rotate horizontal velocity, in degrees. */
+export const LURCH_MAX_ANGLE = 50;
+
+/**
+ * Speed kept through a lurch. The whole point is that redirecting should be nearly free -
+ * ordinary air acceleration already charges you heavily for turning, and that cost is exactly
+ * what makes momentum shifting feel bad without this.
+ */
+export const LURCH_SPEED_RETENTION = 0.99;
+
+/** Seconds before another lurch can fire. Stops a mashed key becoming a steering wheel. */
+export const LURCH_COOLDOWN = 0.35;
+
+/** Below this speed there is no momentum worth shifting, and air accel handles it anyway. */
+export const LURCH_MIN_SPEED = 150;
+
+// --- Slide ----------------------------------------------------------------------------------
+//
+// Land holding crouch without bhopping and you slide, keeping speed and steering, rather than
+// stopping dead. Downhill slides accelerate, because gravity along the surface still applies.
+
+export const SLIDE_ENABLED = true;
+
+/** Minimum horizontal speed to enter a slide. Below it, crouching just crouches. */
+export const SLIDE_MIN_SPEED = 200;
+
+/** Speed at which an active slide gives out and returns to a normal crouch. */
+export const SLIDE_END_SPEED = 120;
+
+/**
+ * Friction while sliding. Far below FRICTION (4) - that is what makes a slide carry.
+ *
+ * It also has to lose to gravity on a slope, or downhill slides decay instead of accelerating:
+ * drag is `friction * speed` against `GRAVITY * sin(angle)` pulling you down, so at 0.35 a
+ * 20-degree slope (274 u/s^2) still wins comfortably at any slide speed under ~780.
+ */
+export const SLIDE_FRICTION = 0.35;
+
+/**
+ * Steering authority while sliding, as a fraction of GROUND_ACCEL. Low enough that a slide is
+ * committed - you aim it, you do not drive it.
+ */
+export const SLIDE_STEER_ACCEL = 0.25;
+
+/** Speed a slide can be steered toward, well under MAX_GROUND_SPEED so it cannot be a run. */
+export const SLIDE_STEER_SPEED = 90;
+
 // --- Collision / integration ------------------------------------------------------------
 
 /** Max height the player is teleported up over when walking into a small ledge (Source: 18). */
