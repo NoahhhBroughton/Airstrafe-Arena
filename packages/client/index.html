@@ -176,7 +176,7 @@
       .bind-head,
       .bind-row {
         display: grid;
-        grid-template-columns: 1fr 116px 116px;
+        grid-template-columns: 1fr 146px 146px;
         align-items: center;
         gap: 6px;
       }
@@ -190,6 +190,35 @@
       .bind-head span:not(:first-child) { text-align: center; }
       .bind-row { padding: 3px 0; }
       .bind-label { opacity: 0.85; }
+
+      .bind-cell {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: stretch;
+        gap: 4px;
+      }
+
+      .bind-clear {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        padding: 0;
+        color: #e6e6e6;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 4px;
+        cursor: pointer;
+        opacity: 0.55;
+      }
+      .bind-clear svg { width: 14px; height: 14px; }
+      .bind-clear:hover {
+        opacity: 1;
+        color: #f77a7a;
+        border-color: rgba(247, 122, 122, 0.5);
+        background: rgba(247, 122, 122, 0.12);
+      }
+      .bind-clear:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 1px; }
 
       .bind-slot {
         padding: 6px 8px;

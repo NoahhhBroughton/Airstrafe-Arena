@@ -2,13 +2,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { vec3, type Vec3 } from "./vec3.js";
 import type { CollisionWorld } from "./collision.js";
-import { createPlayerState, movePlayer, wishDirection, type PlayerInput } from "./player.js";
+import {
+  createPlayerState,
+  eyeHeight,
+  hullHeight,
+  movePlayer,
+  wishDirection,
+  type PlayerInput,
+} from "./player.js";
 import {
   AIR_WISH_SPEED_CAP,
+  DUCK_HEIGHT_GAIN,
   GROUND_NORMAL_MIN_Y,
   GROUND_PROBE_SHRINK,
   JUMP_IMPULSE,
   MAX_GROUND_SPEED,
+  PLAYER_DUCK_HEIGHT,
   PLAYER_HEIGHT,
   SKIN_WIDTH,
   TICK_DT,
@@ -38,7 +47,7 @@ const flatGround = (): CollisionWorld => tiltedPlane(0);
 const emptyWorld: CollisionWorld = { castPlayer: () => null };
 
 function input(overrides: Partial<PlayerInput> = {}): PlayerInput {
-  return { forward: 0, right: 0, jump: false, yaw: 0, ...overrides };
+  return { forward: 0, right: 0, jump: false, crouch: false, yaw: 0, ...overrides };
 }
 
 test("wishDirection: yaw 0 faces -Z and strafes +X, matching Three.js camera orientation", () => {
@@ -360,8 +369,8 @@ test("air control still applies while surfing - the ramp is not a special mode",
 test("the ground probe starts clear of the feet and uses a narrowed shape", () => {
   const calls: { from: Vec3; delta: Vec3; shrink: number | undefined }[] = [];
   const spy: CollisionWorld = {
-    castPlayer(from, delta, shrink) {
-      calls.push({ from, delta, shrink });
+    castPlayer(from, delta, hull) {
+      calls.push({ from, delta, shrink: hull?.shrink });
       return null;
     },
   };
@@ -386,9 +395,9 @@ test("standing on a floor while pressed against a wall stays grounded", () => {
   const floor: Vec3 = { x: 0, y: 1, z: 0 };
   const corner: Vec3 = vec3.normalize({ x: 0, y: 1, z: 1 });
   const world: CollisionWorld = {
-    castPlayer(_from, delta, shrink) {
+    castPlayer(_from, delta, hull) {
       if (delta.y >= 0) return null;
-      return { fraction: 0.5, normal: (shrink ?? 0) > 0 ? floor : corner };
+      return { fraction: 0.5, normal: (hull?.shrink ?? 0) > 0 ? floor : corner };
     },
   };
 
@@ -400,7 +409,7 @@ test("standing on a floor while pressed against a wall stays grounded", () => {
 /** Floor at y = 0 with a ceiling overhead, to exercise downward-facing contact normals. */
 function room(ceilingHeight: number): CollisionWorld {
   return {
-    castPlayer(from: Vec3, delta: Vec3) {
+    castPlayer(from: Vec3, delta: Vec3, hull) {
       if (delta.y < 0) {
         const dist = from.y;
         if (dist + delta.y > 0) return null;
@@ -408,7 +417,8 @@ function room(ceilingHeight: number): CollisionWorld {
         return { fraction: Math.min(Math.max(fraction, 0), 1), normal: { x: 0, y: 1, z: 0 } };
       }
       if (delta.y > 0) {
-        const headroom = ceilingHeight - (from.y + PLAYER_HEIGHT);
+        // Height matters here: a ducked hull fits under a ceiling a standing one does not.
+        const headroom = ceilingHeight - (from.y + (hull?.height ?? PLAYER_HEIGHT));
         if (delta.y < headroom) return null;
         const fraction = headroom <= 0 ? 0 : headroom / delta.y;
         return { fraction: Math.min(Math.max(fraction, 0), 1), normal: { x: 0, y: -1, z: 0 } };
@@ -445,6 +455,68 @@ test("jumping into a ceiling stops you dead rather than sticking or clipping thr
   // Unobstructed this jump would reach ~45.6; the ceiling has to be what stopped it.
   assert.ok(peak > headroom - 1, `never actually reached the ceiling (peak ${peak})`);
   assert.ok(landed, "player stuck against the ceiling instead of falling back down");
+});
+
+test("crouching on the ground lowers the hull but leaves the feet planted", () => {
+  const world = flatGround();
+  let state = createPlayerState({ x: 0, y: 0, z: 0 });
+  state = movePlayer(state, input(), world, TICK_DT);
+  const standingFeet = state.position.y;
+
+  for (let i = 0; i < 64; i++) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+
+  assert.equal(state.duck, 1, "should be fully ducked after holding crouch");
+  assert.equal(hullHeight(state.duck), PLAYER_DUCK_HEIGHT);
+  assert.ok(
+    Math.abs(state.position.y - standingFeet) < 1e-6,
+    `feet moved while crouching on the ground: ${standingFeet} -> ${state.position.y}`,
+  );
+  // The eye drops instead, which is what the player actually sees.
+  assert.ok(eyeHeight(state.duck) < eyeHeight(0));
+});
+
+test("ducking on the ground takes DUCK_TRANSITION_TIME rather than snapping", () => {
+  const world = flatGround();
+  let state = createPlayerState({ x: 0, y: 0, z: 0 });
+  state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  assert.ok(state.duck > 0 && state.duck < 1, `snapped straight to ${state.duck}`);
+});
+
+test("crouch-jump clears more height than a plain jump", () => {
+  const world = flatGround();
+
+  const peakOf = (crouchInAir: boolean): number => {
+    let state = createPlayerState({ x: 0, y: 0, z: 0 });
+    state = movePlayer(state, input({ jump: true }), world, TICK_DT);
+    let peak = state.position.y;
+    for (let i = 0; i < 128 && !state.onGround; i++) {
+      state = movePlayer(state, input({ jump: true, crouch: crouchInAir }), world, TICK_DT);
+      peak = Math.max(peak, state.position.y);
+    }
+    return peak;
+  };
+
+  const plain = peakOf(false);
+  const crouched = peakOf(true);
+
+  // Ducking mid-air snaps the feet up to the head, so the feet clear DUCK_HEIGHT_GAIN more
+  // than the jump arc alone would carry them - the entire point of the technique.
+  assert.ok(
+    crouched > plain + DUCK_HEIGHT_GAIN * 0.9,
+    `crouch-jump reached ${crouched.toFixed(1)} vs plain ${plain.toFixed(1)}, ` +
+      `expected about ${DUCK_HEIGHT_GAIN} more`,
+  );
+});
+
+test("you cannot stand up inside a ceiling you crouched under", () => {
+  // Headroom fits the ducked hull but not the standing one.
+  const world = room(PLAYER_DUCK_HEIGHT + 4);
+  let state = { ...createPlayerState({ x: 0, y: 0, z: 0 }), duck: 1 };
+
+  for (let i = 0; i < 64; i++) state = movePlayer(state, input(), world, TICK_DT);
+
+  assert.equal(state.duck, 1, "stood up into a ceiling that has no room for it");
+  assert.equal(state.onGround, true);
 });
 
 test("falling through empty space accelerates at exactly GRAVITY", () => {

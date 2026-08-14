@@ -12,6 +12,7 @@ import {
   PLAYER_RADIUS,
   SKIN_WIDTH,
   type CollisionWorld,
+  type HullOptions,
   type MapDef,
   type ShapeCastHit,
   type Vec3,
@@ -21,11 +22,15 @@ const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
 
 /**
  * Rapier's Capsule takes the half-height of the *cylinder* section, so total height is
- * 2 * (halfHeight + radius). Deriving halfHeight from the radius this way keeps total height
- * pinned at PLAYER_HEIGHT for any radius - which is what makes `shrink` narrow the capsule
- * without lifting the feet off the ground and quietly breaking the ground probe.
+ * 2 * (halfHeight + radius). Deriving halfHeight from the radius this way pins total height to
+ * exactly `height` for any radius - which is what makes `shrink` narrow the capsule without
+ * lifting the feet off the ground and quietly breaking the ground probe.
+ *
+ * A capsule cannot be shorter than its own diameter, so a heavily shrunk radius is clamped
+ * rather than producing a negative cylinder section.
  */
-const capsuleHalfHeight = (radius: number): number => PLAYER_HEIGHT / 2 - radius;
+const capsuleHalfHeight = (height: number, radius: number): number =>
+  Math.max(height / 2 - radius, 0.01);
 
 export async function initRapier(): Promise<void> {
   await RAPIER.init();
@@ -59,31 +64,36 @@ export function createRapierWorld(map: MapDef): CollisionWorld {
   world.step();
 
   // Shape instances are reused rather than rebuilt per cast - each one allocates on the WASM
-  // heap, and this runs several times a tick.
-  const capsules = new Map<number, RAPIER.Capsule>();
-  const capsuleFor = (shrink: number): RAPIER.Capsule => {
-    let capsule = capsules.get(shrink);
+  // heap, and this runs several times a tick. Keyed by height and shrink together, since
+  // crouching varies the height continuously while ducking.
+  const capsules = new Map<string, RAPIER.Capsule>();
+  const capsuleFor = (height: number, shrink: number): RAPIER.Capsule => {
+    const key = `${height.toFixed(3)}:${shrink}`;
+    let capsule = capsules.get(key);
     if (!capsule) {
-      const radius = PLAYER_RADIUS - shrink;
-      capsule = new RAPIER.Capsule(capsuleHalfHeight(radius), radius);
-      capsules.set(shrink, capsule);
+      const radius = Math.min(PLAYER_RADIUS - shrink, height / 2);
+      capsule = new RAPIER.Capsule(capsuleHalfHeight(height, radius), radius);
+      capsules.set(key, capsule);
     }
     return capsule;
   };
 
   return {
-    castPlayer(from: Vec3, delta: Vec3, shrink = 0): ShapeCastHit | null {
+    castPlayer(from: Vec3, delta: Vec3, hull: HullOptions = {}): ShapeCastHit | null {
       // A zero-length sweep has no direction for Rapier to work with.
       if (vec3.lengthSq(delta) < 1e-12) return null;
 
+      const height = hull.height ?? PLAYER_HEIGHT;
+      const shrink = hull.shrink ?? 0;
+
       // Callers work in feet coordinates; Rapier wants the capsule's center.
-      const center = { x: from.x, y: from.y + PLAYER_HEIGHT / 2, z: from.z };
+      const center = { x: from.x, y: from.y + height / 2, z: from.z };
 
       const hit = world.castShape(
         center,
         IDENTITY_ROTATION,
         delta,
-        capsuleFor(shrink),
+        capsuleFor(height, shrink),
         // Report exact contact, not "within SKIN_WIDTH". Movement keeps its own clearance by
         // backing off along the normal; folding that clearance into the cast tolerance instead
         // puts a resting player exactly on the hit/miss boundary, where the reported normal is

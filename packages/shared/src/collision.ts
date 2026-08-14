@@ -16,6 +16,20 @@ export interface ShapeCastHit {
   normal: Vec3;
 }
 
+export interface HullOptions {
+  /**
+   * Narrows the shape by this many units *without changing its height*, so the feet stay put.
+   *
+   * The ground probe needs it: at full width, a downward sweep taken while pressed against a
+   * wall catches the wall's bottom edge first and reports a 45-degree normal, which reads as
+   * "not walkable" and drops the player out of ground state while they are plainly standing on
+   * the floor. A slightly thinner probe misses the wall and finds the floor.
+   */
+  shrink?: number;
+  /** Total capsule height. Defaults to PLAYER_HEIGHT; crouching passes the ducked height. */
+  height?: number;
+}
+
 export interface CollisionWorld {
   /**
    * Sweep the player's collision shape from `from` along `delta` and report the first contact.
@@ -24,11 +38,9 @@ export interface CollisionWorld {
    * implementations are responsible for offsetting to whatever origin their shape uses.
    * Returns null if the whole sweep is unobstructed.
    *
-   * `shrink` narrows the shape by that many units *without changing its height*, so the feet
-   * stay put. The ground probe needs this: at full width, a downward sweep taken while pressed
-   * against a wall catches the wall's bottom edge first and reports a 45-degree normal, which
-   * reads as "not walkable" and drops the player out of ground state while they are plainly
-   * standing on the floor. A slightly thinner probe misses the wall and finds the floor.
+   * Contact is reported at zero distance. Implementations must not build a skin gap into the
+   * cast tolerance: movement maintains its own clearance, and folding the two together puts a
+   * resting player exactly on the hit/miss boundary where the reported normal is arbitrary.
    */
-  castPlayer(from: Vec3, delta: Vec3, shrink?: number): ShapeCastHit | null;
+  castPlayer(from: Vec3, delta: Vec3, hull?: HullOptions): ShapeCastHit | null;
 }

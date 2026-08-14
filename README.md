@@ -29,7 +29,8 @@ Then open the printed URL and click the canvas to lock the mouse.
 | Key | |
 |---|---|
 | `WASD` | move |
-| `Space` / `Wheel Down` | jump — hold space to keep bhopping (auto-bhop is on by default) |
+| `Space` | jump — hold it to keep bhopping (auto-bhop is on by default) |
+| `Left Ctrl` | crouch — duck mid-jump to clear 18 more units (crouch-jump) |
 | `1` / `2` / `3` | teleport to the spawn / bhop staircase / surf platform |
 | `R` | respawn |
 | `Esc` | settings |
@@ -58,9 +59,9 @@ Every action has a **primary and a secondary** slot, so jump can live on both `S
 buttons and wheel notches are all bindable; a wheel notch registers as exactly one tick of
 input, which is what makes wheel-jump work.
 
-Click a slot, then press what you want. `Delete` clears it, `Esc` cancels. Binding something
-that's already in use **takes it from wherever it was** and tells you what it removed, rather
-than leaving two actions fighting over one key.
+Click a slot, then press what you want. `Delete` clears it, `Esc` cancels, or use the trash
+button beside the slot. Binding something that's already in use **takes it from wherever it was**
+and tells you what it removed, rather than leaving two actions fighting over one key.
 
 ## Test
 

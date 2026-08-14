@@ -41,17 +41,37 @@ persistent memory of project progress across sessions.
   forgiving and builds speed faster. This is the knob that actually governs air control.
 - **`AIR_ACCEL` set to 1000**, the familiar bhop-server number. Functionally identical to 100 at
   64 tick (it saturates at 64), but recognisable and still correct if the tick rate rises.
-- **Rebindable controls**, two slots per action, keyboard/mouse/wheel.
+- **Rebindable controls**, two slots per action, keyboard/mouse/wheel, with per-slot clear.
+- **Jump height doubled** (`JUMP_IMPULSE` 270 → 382, apex 45 → 91). Apex scales with the square
+  of the impulse.
+- **Crouch + crouch-jump added.** Not on the original Phase 1 list — see "Scope added during
+  Phase 1" below.
+- **Two collision bugs found by playtest and fixed:** players launching off flat ground, and
+  losing ground state (and therefore auto-bhop) heading downhill. Both written up in
+  `MOVEMENT_SPEC.md` since they will reappear if the collision layer is rewritten.
+- **Ramp slide implemented.** Landing projects velocity onto the ground plane instead of zeroing
+  vertical velocity, so dropping onto a descending ramp converts fall speed into speed along it.
+
+### Scope added during Phase 1 (not in the original plan)
+- Settings screen with live movement tuning, Source-1:1 sensitivity, raw input, FOV.
+- Rebindable controls.
+- Crouch and crouch-jump. Worth noting the original Phase 1 checklist never mentioned ducking at
+  all, even though it is core Source movement and crouch-jumping is required to clear geometry on
+  most real bhop maps. Flagging in case other base mechanics are missing from the plan rather
+  than deliberately deferred — **surf ramp entry/exit while ducked is untested**, and long-jump
+  (crouch + jump timing) has not been considered.
 
 ### Still open for the playtest
 Measured as working but not judged as *feeling* right — decide at the keyboard, then update
 `docs/MOVEMENT_SPEC.md` with whatever the constants become:
+- **The test map is now scaled for the wrong jump.** Its geometry was laid out for a 45-unit
+  apex; the jump is 91 and a crouch-jump clears 109. The staircase (36-unit rises, 260 spacing)
+  is trivially clearable, and a jump now covers ~306 units of ground at walk speed rather than
+  ~216. Rescaling is a map decision, so it has not been done unilaterally.
 - Surf ramp is short: the drop from the start platform to where the ramp meets the ground is
   ~414 units, so a ride lasts about a second unless you carry speed along its length. If it
   wants to be a real ride, the surf section needs to be taller (which means redoing the access
   ramp too).
-- Bhop staircase spacing (260 units) and rise (36) were picked from jump-arc arithmetic, not
-  from playing it.
 - `AIR_WISH_SPEED_CAP` is now 75. It is the knob to reach for if strafing still doesn't feel
   right — acceleration is saturated, so this is the only thing that changes air control.
 - Verify the sensitivity match with a 360° test against CS rather than trusting it on paper.

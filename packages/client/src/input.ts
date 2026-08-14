@@ -244,13 +244,14 @@ export function createInput(
       // alt-tabbing mid-strafe leaves the player running into a wall.
       if (!locked || suspended) {
         pulses.clear();
-        return { forward: 0, right: 0, jump: false, yaw };
+        return { forward: 0, right: 0, jump: false, crouch: false, yaw };
       }
 
       const input: PlayerInput = {
         forward: (isActive("moveForward") ? 1 : 0) - (isActive("moveBack") ? 1 : 0),
         right: (isActive("moveRight") ? 1 : 0) - (isActive("moveLeft") ? 1 : 0),
         jump: isActive("jump"),
+        crouch: isActive("crouch"),
         yaw,
       };
       // Pulses last exactly one tick. Cleared after sampling rather than on the next event so

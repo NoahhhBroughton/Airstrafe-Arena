@@ -39,11 +39,11 @@ export const STOP_SPEED = 100;
  * Apex height is JUMP_IMPULSE^2 / (2 * GRAVITY), so height scales with the *square* of this -
  * tripling the jump means multiplying the impulse by sqrt(3), not by 3.
  *
- * 468 gives 468^2 / 1600 = 137 units, three times Source's ~45. Airtime roughly doubles too
- * (2 * v / g, so 1.17s against 0.68s), which is worth knowing when tuning course spacing: a
- * jump now covers about 375 units of ground at walk speed rather than 216.
+ * 382 gives 382^2 / 1600 = 91 units, twice Source's ~45. Airtime scales linearly with the
+ * impulse (2 * v / g), so 0.96s against 0.68s - worth knowing when tuning course spacing, since
+ * a jump now covers about 306 units of ground at walk speed rather than 216.
  */
-export const JUMP_IMPULSE = 468;
+export const JUMP_IMPULSE = 382;
 export const GRAVITY = 800;
 
 // cos of ~45 degrees. Surfaces with a normal.y below this are treated as "surf," not "ground" -
@@ -67,6 +67,25 @@ export const PLAYER_RADIUS = 16;
 export const PLAYER_HEIGHT = 72;
 /** Camera height above the player's feet. Source uses 64 of a 72-unit hull. */
 export const PLAYER_EYE_HEIGHT = 64;
+
+/**
+ * Ducked hull, matching CS's 54 of 72. The 18-unit difference is exactly what a crouch-jump
+ * buys you in height, and (not coincidentally) equals STEP_HEIGHT.
+ */
+export const PLAYER_DUCK_HEIGHT = 54;
+export const PLAYER_DUCK_EYE_HEIGHT = 46;
+
+/** How far the feet rise when ducking in mid-air - see MOVEMENT_SPEC.md "Crouch". */
+export const DUCK_HEIGHT_GAIN = PLAYER_HEIGHT - PLAYER_DUCK_HEIGHT;
+
+/**
+ * Seconds to fully duck or stand while on the ground. Airborne ducking is instant, because
+ * that snap is the crouch-jump: the feet leave the floor the moment the key goes down.
+ */
+export const DUCK_TRANSITION_TIME = 0.2;
+
+/** Ducked movement speed, as a fraction of MAX_GROUND_SPEED. Source uses about a third. */
+export const DUCK_SPEED_SCALE = 1 / 3;
 
 // --- Collision / integration ------------------------------------------------------------
 

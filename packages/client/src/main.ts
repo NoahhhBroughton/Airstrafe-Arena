@@ -9,9 +9,9 @@
 import * as THREE from "three";
 import {
   createPlayerState,
+  eyeHeight,
   movePlayer,
   vec3,
-  PLAYER_EYE_HEIGHT,
   TEST_MAP,
   TICK_DT,
   type PlayerState,
@@ -76,10 +76,13 @@ async function main(): Promise<void> {
   // Position at the end of the previous tick, so rendering can interpolate toward the current
   // one instead of snapping 64 times a second.
   let previousPosition = vec3.clone(state.position);
+  // Interpolated alongside position so the eye glides down on a crouch instead of snapping.
+  let previousDuck = state.duck;
 
   const teleport = (position: typeof map.spawn, yaw: number) => {
     state = createPlayerState(position);
     previousPosition = vec3.clone(state.position);
+    previousDuck = state.duck;
     input.setYaw(yaw);
   };
 
@@ -120,6 +123,7 @@ async function main(): Promise<void> {
     let ticks = 0;
     while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
       previousPosition = state.position;
+      previousDuck = state.duck;
       state = movePlayer(state, input.sample(), collision, TICK_DT, moveOptions);
       accumulator -= TICK_DT;
       ticks++;
@@ -130,9 +134,10 @@ async function main(): Promise<void> {
     // the mouse rather than from the tick, so aim stays as responsive as the display allows
     // even though movement is quantized to 64Hz.
     const alpha = accumulator / TICK_DT;
+    const eye = eyeHeight(previousDuck + (state.duck - previousDuck) * alpha);
     camera.position.set(
       previousPosition.x + (state.position.x - previousPosition.x) * alpha,
-      previousPosition.y + (state.position.y - previousPosition.y) * alpha + PLAYER_EYE_HEIGHT,
+      previousPosition.y + (state.position.y - previousPosition.y) * alpha + eye,
       previousPosition.z + (state.position.z - previousPosition.z) * alpha,
     );
     // YXZ order keeps yaw and pitch independent, so the horizon never rolls.

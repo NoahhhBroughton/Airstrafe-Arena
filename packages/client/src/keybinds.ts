@@ -28,6 +28,7 @@ export const CORE_ACTIONS: readonly ActionDef[] = [
   { id: "moveLeft", label: "Strafe left", group: "Move" },
   { id: "moveRight", label: "Strafe right", group: "Move" },
   { id: "jump", label: "Jump", group: "Move" },
+  { id: "crouch", label: "Crouch", group: "Move" },
   { id: "respawn", label: "Respawn", group: "Debug" },
 ];
 
@@ -54,6 +55,7 @@ export function defaultBinds(spots: readonly MapSpot[]): Binds {
     // Secondary is deliberately empty. Wheel-jump is the obvious thing to put here, but it is
     // a preference, not a default - an unasked-for wheel bind means every stray scroll jumps.
     jump: ["Space", null],
+    crouch: ["ControlLeft", null],
     respawn: ["KeyR", null],
   };
   spots.forEach((_, i) => {

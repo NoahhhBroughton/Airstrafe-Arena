@@ -15,6 +15,13 @@ import {
   type ActionDef,
 } from "./keybinds.js";
 
+/** Inline so the page stays self-contained - no icon font, no network request. */
+const TRASH_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+  <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.5 6.5v5M9.5 6.5v5"
+        fill="none" stroke="currentColor" stroke-width="1.2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
 const escapeHtml = (value: string): string =>
   value.replace(
     /[&<>"']/g,
@@ -130,8 +137,18 @@ function controlsHtml(actions: readonly ActionDef[]): string {
             (action) => `
           <div class="bind-row">
             <span class="bind-label">${escapeHtml(action.label)}</span>
-            <button type="button" class="bind-slot" data-action="${escapeHtml(action.id)}" data-slot="0"></button>
-            <button type="button" class="bind-slot" data-action="${escapeHtml(action.id)}" data-slot="1"></button>
+            ${[0, 1]
+              .map(
+                (slot) => `
+              <span class="bind-cell">
+                <button type="button" class="bind-slot" data-action="${escapeHtml(action.id)}" data-slot="${slot}"></button>
+                <button type="button" class="bind-clear" data-clear="${escapeHtml(action.id)}" data-slot="${slot}"
+                        title="Clear this bind" aria-label="Clear ${escapeHtml(action.label)} ${slot === 0 ? "primary" : "secondary"} bind">
+                  ${TRASH_ICON}
+                </button>
+              </span>`,
+              )
+              .join("")}
           </div>`,
           )
           .join("")}
@@ -316,6 +333,24 @@ export function createSettingsUi(
       capturing = { actionId, slot, button };
       notify("", "info");
       onCaptureChange(true);
+      render(settings.current);
+    });
+  }
+
+  for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>(".bind-clear"))) {
+    button.addEventListener("click", () => {
+      const actionId = button.dataset.clear;
+      const slot = Number(button.dataset.slot);
+      if (!actionId || !Number.isInteger(slot)) return;
+      // Clearing while a capture is armed would otherwise leave the listener waiting on a slot
+      // the player just emptied.
+      stopCapture();
+      if (settings.current.binds[actionId]?.[slot] == null) {
+        notify(`${labelFor(actionId)} (${slot === 0 ? "primary" : "secondary"}) is already unbound.`, "info");
+        return;
+      }
+      settings.set("binds", clearBind(settings.current.binds, actionId, slot));
+      notify(`Cleared ${labelFor(actionId)} (${slot === 0 ? "primary" : "secondary"}).`, "info");
       render(settings.current);
     });
   }

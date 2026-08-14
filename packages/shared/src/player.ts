@@ -13,11 +13,15 @@ import {
   groundAccelerate,
   airAccelerate,
   airWishSpeed,
+  clipVelocity,
   clipVelocityAgainstPlanes,
   PARALLEL_PLANE_DOT,
 } from "./movement.js";
 import {
   AUTO_BHOP_ENABLED,
+  DUCK_HEIGHT_GAIN,
+  DUCK_SPEED_SCALE,
+  DUCK_TRANSITION_TIME,
   GRAVITY,
   GROUND_CHECK_DIST,
   GROUND_NORMAL_MIN_Y,
@@ -28,6 +32,9 @@ import {
   MAX_GROUND_SPEED,
   MAX_MOVE_ITERATIONS,
   MAX_VELOCITY,
+  PLAYER_DUCK_EYE_HEIGHT,
+  PLAYER_EYE_HEIGHT,
+  PLAYER_HEIGHT,
   SKIN_WIDTH,
   STEP_HEIGHT,
 } from "./constants.js";
@@ -47,6 +54,12 @@ export interface PlayerState {
    * during reconciliation have to see the same edge the original simulation did.
    */
   jumpHeld: boolean;
+  /**
+   * How ducked the player is, 0 (standing) to 1 (fully ducked). Continuous rather than a
+   * boolean so the hull can animate down on the ground, and so the eye can follow it without
+   * the camera teleporting.
+   */
+  duck: number;
 }
 
 export interface PlayerInput {
@@ -55,6 +68,7 @@ export interface PlayerInput {
   /** -1 left .. +1 right. */
   right: number;
   jump: boolean;
+  crouch: boolean;
   /** View yaw in radians. Movement uses yaw only - looking up does not slow you down. */
   yaw: number;
 }
@@ -80,7 +94,73 @@ export function createPlayerState(position: Vec3): PlayerState {
     onGround: false,
     groundNormal: vec3.up(),
     jumpHeld: false,
+    duck: 0,
   };
+}
+
+/** Total collision height at a given duck amount. */
+export function hullHeight(duck: number): number {
+  return PLAYER_HEIGHT - duck * DUCK_HEIGHT_GAIN;
+}
+
+/** Camera height above the feet at a given duck amount. */
+export function eyeHeight(duck: number): number {
+  return PLAYER_EYE_HEIGHT - duck * (PLAYER_EYE_HEIGHT - PLAYER_DUCK_EYE_HEIGHT);
+}
+
+/**
+ * Advance the duck amount, moving the player if the hull has to shift under them.
+ *
+ * On the ground the hull shrinks downward from the head and the feet stay planted, so ducking
+ * is purely cosmetic to the collision floor. In the air it is the opposite and that asymmetry
+ * *is* the crouch-jump: the head holds its arc while the feet snap up to meet it, clearing
+ * DUCK_HEIGHT_GAIN more than a plain jump would. Instantly, not over DUCK_TRANSITION_TIME -
+ * the timing window for tucking your legs mid-jump is what makes the technique a skill.
+ */
+function updateDuck(
+  state: PlayerState,
+  wantsCrouch: boolean,
+  onGround: boolean,
+  position: Vec3,
+  world: CollisionWorld,
+  dt: number,
+): { duck: number; position: Vec3 } {
+  const target = wantsCrouch ? 1 : 0;
+  let duck = state.duck;
+  let pos = position;
+
+  if (target > duck) {
+    if (onGround) {
+      duck = Math.min(1, duck + dt / DUCK_TRANSITION_TIME);
+    } else {
+      pos = { x: pos.x, y: pos.y + (1 - duck) * DUCK_HEIGHT_GAIN, z: pos.z };
+      duck = 1;
+    }
+    return { duck, position: pos };
+  }
+
+  if (target < duck) {
+    // Standing back up needs somewhere to put the extra height, or the player would grow into
+    // whatever they are crouched under.
+    const current = hullHeight(duck);
+    if (onGround) {
+      const needed = PLAYER_HEIGHT - current;
+      const blocked =
+        needed > 0 && world.castPlayer(pos, { x: 0, y: needed, z: 0 }, { height: current });
+      if (!blocked) duck = Math.max(0, duck - dt / DUCK_TRANSITION_TIME);
+    } else {
+      // Airborne, the feet drop back down to where the taller hull's base belongs.
+      const drop = duck * DUCK_HEIGHT_GAIN;
+      const blocked =
+        drop > 0 && world.castPlayer(pos, { x: 0, y: -drop, z: 0 }, { height: current });
+      if (!blocked) {
+        pos = { x: pos.x, y: pos.y - drop, z: pos.z };
+        duck = 0;
+      }
+    }
+  }
+
+  return { duck, position: pos };
 }
 
 /**
@@ -121,12 +201,16 @@ interface GroundProbe {
 function probeGround(
   position: Vec3,
   world: CollisionWorld,
+  height: number,
   distance = GROUND_CHECK_DIST,
 ): GroundProbe | null {
   const start = { x: position.x, y: position.y + GROUND_PROBE_LIFT, z: position.z };
   const length = GROUND_PROBE_LIFT + distance;
 
-  const hit = world.castPlayer(start, { x: 0, y: -length, z: 0 }, GROUND_PROBE_SHRINK);
+  const hit = world.castPlayer(start, { x: 0, y: -length, z: 0 }, {
+    shrink: GROUND_PROBE_SHRINK,
+    height,
+  });
   if (!hit) return null;
   // A surf ramp registers a hit here too - it just isn't steep-enough-side-up to be "ground."
   // Rejecting it is what keeps friction and ground-accelerate off while surfing.
@@ -166,6 +250,7 @@ function slideMove(
   velocity: Vec3,
   dt: number,
   world: CollisionWorld,
+  height: number,
 ): SlideResult {
   let pos = position;
   let vel = velocity;
@@ -177,7 +262,7 @@ function slideMove(
     if (timeLeft <= EPSILON || vec3.lengthSq(vel) < EPSILON) break;
 
     const delta = vec3.scale(vel, timeLeft);
-    const hit = world.castPlayer(pos, delta);
+    const hit = world.castPlayer(pos, delta, { height });
 
     if (!hit) {
       pos = vec3.add(pos, delta);
@@ -232,8 +317,8 @@ function slideMove(
 }
 
 /** Sweep along `delta` and stop just short of contact, keeping the skin gap intact. */
-function sweep(position: Vec3, delta: Vec3, world: CollisionWorld): Vec3 {
-  const hit = world.castPlayer(position, delta);
+function sweep(position: Vec3, delta: Vec3, world: CollisionWorld, height: number): Vec3 {
+  const hit = world.castPlayer(position, delta, { height });
   if (!hit) return vec3.add(position, delta);
   return vec3.scaleAndAdd(position, delta, hit.fraction);
 }
@@ -251,8 +336,9 @@ function stepMove(
   velocity: Vec3,
   dt: number,
   world: CollisionWorld,
+  height: number,
 ): SlideResult {
-  const flat = slideMove(position, velocity, dt, world);
+  const flat = slideMove(position, velocity, dt, world, height);
   if (!velocity.x && !velocity.z) return flat;
 
   // Nothing stopped us, so there is nothing to step over. Skipping here is not just an
@@ -262,9 +348,9 @@ function stepMove(
   // flickered in and out of ground state while simply walking in a straight line.
   if (!flat.blocked) return flat;
 
-  const up = sweep(position, { x: 0, y: STEP_HEIGHT, z: 0 }, world);
-  const stepped = slideMove(up, velocity, dt, world);
-  const down = world.castPlayer(stepped.position, { x: 0, y: -STEP_HEIGHT, z: 0 });
+  const up = sweep(position, { x: 0, y: STEP_HEIGHT, z: 0 }, world, height);
+  const stepped = slideMove(up, velocity, dt, world, height);
+  const down = world.castPlayer(stepped.position, { x: 0, y: -STEP_HEIGHT, z: 0 }, { height });
 
   // Landed on nothing, or on something too steep to stand on: the step was into thin air or
   // onto a ramp face, neither of which should be treated as a stair.
@@ -302,14 +388,26 @@ export function movePlayer(
   // 1. Where are we standing? Note this asks the world, not the velocity: walking up a slope
   //    leaves velocity clipped *along* it and therefore rising, and treating "moving upward"
   //    as "airborne" would drop friction and ground acceleration for the whole climb.
-  let ground = probeGround(position, world);
+  //    Probed with the hull we came in at, before ducking can change it.
+  let ground = probeGround(position, world, hullHeight(state.duck));
   let onGround = ground !== null;
   /** Ground state before the jump can clear it - the step-down at the end keys off this. */
   const wasOnGround = onGround;
 
-  if (onGround && velocity.y < 0) velocity.y = 0;
+  // Project onto the ground plane rather than flattening vertical velocity to zero. On level
+  // ground the two are identical (the normal is straight up, so the projection removes exactly
+  // velocity.y). On a slope they are not: zeroing throws away the descent, while projecting
+  // keeps the player sliding along the surface. See MOVEMENT_SPEC.md "Ramp slide".
+  if (ground && velocity.y < 0) velocity = clipVelocity(velocity, ground.normal);
 
-  // 2. Jump. Horizontal velocity is untouched on purpose - carrying it through the jump is the
+  // 2. Duck, before the jump, so a crouch-jump on the same tick still leaves at full height
+  //    and only tucks the legs once airborne.
+  const ducked = updateDuck(state, input.crouch, onGround, position, world, dt);
+  position = ducked.position;
+  const duck = ducked.duck;
+  const height = hullHeight(duck);
+
+  // 3. Jump. Horizontal velocity is untouched on purpose - carrying it through the jump is the
   //    entire basis of a bhop chain (MOVEMENT_SPEC.md "Jump").
   const wantsJump = input.jump && (autoBhop || !state.jumpHeld);
   const jumped = onGround && wantsJump;
@@ -319,7 +417,7 @@ export function movePlayer(
     ground = null;
   }
 
-  // 3. Accelerate.
+  // 4. Accelerate.
   const wishDir = wishDirection(input);
   const inputMagnitude = Math.min(
     1,
@@ -327,8 +425,16 @@ export function movePlayer(
   );
 
   if (onGround) {
+    // Ducking slows you down, but only on the ground. Applying it airborne would make a
+    // crouch-jump cost air control, turning a movement technique into a penalty.
+    const duckScale = 1 - duck * (1 - DUCK_SPEED_SCALE);
     velocity = applyFriction(velocity, dt);
-    velocity = groundAccelerate(velocity, wishDir, MAX_GROUND_SPEED * inputMagnitude, dt);
+    velocity = groundAccelerate(
+      velocity,
+      wishDir,
+      MAX_GROUND_SPEED * inputMagnitude * duckScale,
+      dt,
+    );
   } else {
     velocity = airAccelerate(
       velocity,
@@ -339,25 +445,25 @@ export function movePlayer(
     );
   }
 
-  // 4. Gravity, split either side of the move. A full step before or after biases jump height
+  // 5. Gravity, split either side of the move. A full step before or after biases jump height
   //    by g*dt^2/2 per tick; splitting it makes the arc match the analytic height instead, so
   //    JUMP_IMPULSE/GRAVITY tuning means what MOVEMENT_SPEC.md says it means.
   if (!onGround) velocity.y -= GRAVITY * dt * 0.5;
 
-  // 5. Integrate.
+  // 6. Integrate.
   const moved = onGround
-    ? stepMove(position, velocity, dt, world)
-    : slideMove(position, velocity, dt, world);
+    ? stepMove(position, velocity, dt, world, height)
+    : slideMove(position, velocity, dt, world, height);
   position = moved.position;
   velocity = moved.velocity;
 
   if (!onGround) velocity.y -= GRAVITY * dt * 0.5;
 
-  // 6. Re-check ground so the returned state reflects where the player actually ended up -
+  // 7. Re-check ground so the returned state reflects where the player actually ended up -
   //    the renderer, the HUD, and next tick's jump check all read this.
   // Skip entirely on the tick we jumped, or the probe re-finds the floor we just left and
   // cancels the jump before it starts.
-  let landedProbe = jumped ? null : probeGround(position, world);
+  let landedProbe = jumped ? null : probeGround(position, world, height);
 
   // Step down. Walking is integrated horizontally, so on any descending surface the ground
   // falls away underneath you: at speed v on a slope of angle a, each tick drops v * dt * tan(a)
@@ -367,7 +473,7 @@ export function movePlayer(
   // glued to slopes and stairs. Only when already grounded and not on the way up, so it can
   // never yank a jump back to the floor.
   if (!landedProbe && wasOnGround && !jumped && velocity.y <= 0) {
-    landedProbe = probeGround(position, world, STEP_HEIGHT);
+    landedProbe = probeGround(position, world, height, STEP_HEIGHT);
   }
 
   const landed = landedProbe !== null;
@@ -380,7 +486,14 @@ export function movePlayer(
   // Landing deliberately does not touch horizontal velocity. Friction on the next grounded tick
   // bleeds it off instead, which is what makes a frame-perfect bhop keep speed and a late one
   // lose it (MOVEMENT_SPEC.md "Landing").
-  if (landed && velocity.y < 0) velocity.y = 0;
+  //
+  // Landing on a *slope* actively pays out: projecting the fall onto the surface converts the
+  // downward speed into speed along it, so dropping onto a descending ramp leaves faster than
+  // it arrived. Zeroing velocity.y here instead would discard exactly that (MOVEMENT_SPEC.md
+  // "Ramp slide").
+  if (landedProbe && velocity.y < 0) {
+    velocity = clipVelocity(velocity, landedProbe.normal);
+  }
 
   const speed = vec3.length(velocity);
   if (speed > MAX_VELOCITY) velocity = vec3.scale(velocity, MAX_VELOCITY / speed);
@@ -391,5 +504,6 @@ export function movePlayer(
     onGround: landed,
     groundNormal: landedProbe?.normal ?? vec3.up(),
     jumpHeld: input.jump,
+    duck,
   };
 }

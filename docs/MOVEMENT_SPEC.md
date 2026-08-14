@@ -105,6 +105,68 @@ float errors).
   grounded tick will naturally bleed excess speed if the player doesn't jump again — this is what
   makes "perfect bhop" (jumping the instant you land) preserve speed while mistimed landings lose
   it.
+- Vertical velocity is *projected onto the ground plane*, not zeroed — see "Ramp slide" below.
+  On level ground the two are identical; on a slope, only one of them pays out speed.
+
+## Ramp slide (landing on a descending slope)
+
+Landing is not just "stop falling." When the player contacts a surface, velocity is **projected
+onto that surface's plane** — the same `clipVelocity` used for surf, applied to walkable ground:
+
+```
+velocity = clipVelocity(velocity, groundNormal)
+```
+
+On level ground the normal is straight up, so this removes exactly `velocity.y` and is
+indistinguishable from zeroing it. On a slope it is not, and the difference is the whole
+mechanic: the downward component gets redirected *along* the ramp, so you leave faster than you
+arrived. Dropping onto a 20° descending ramp at 320 u/s horizontal with a −675 u/s fall exits at
+about 504 u/s horizontal.
+
+This is why bhopping down a slope should *gain* speed rather than lose it, and it is why the
+implementation must never write `velocity.y = 0` on landing — doing so silently discards the
+conversion and leaves only whatever horizontal speed already existed.
+
+The same projection is applied on the tick's initial ground check, not just on impact, so a
+player already sliding along a slope keeps their descent instead of having it flattened every
+tick. When velocity is already tangent to the surface, the projection is a no-op — so the boost
+naturally only pays out on actual impacts.
+
+### Staying attached to descending ground
+
+Movement is integrated horizontally, so on a descending surface the ground falls away by
+`speed * dt * tan(angle)` each tick. Past `GROUND_CHECK_DIST` that reads as *airborne*, which
+costs friction and ground acceleration, and — because jumping requires `onGround` — silently
+kills auto-bhop the moment the player points downhill. After moving, if the player was grounded,
+did not jump, and is not rising, probe again as far as `STEP_HEIGHT` to reattach. This is
+Source's step-down, and it is what keeps you glued to slopes and stairs.
+
+## Crouch
+
+| Constant | Value | Notes |
+|---|---|---|
+| `PLAYER_DUCK_HEIGHT` | 54 | Ducked hull, matching CS's 54 of 72 |
+| `PLAYER_DUCK_EYE_HEIGHT` | 46 | |
+| `DUCK_HEIGHT_GAIN` | 18 | `PLAYER_HEIGHT - PLAYER_DUCK_HEIGHT`; also equals `STEP_HEIGHT` |
+| `DUCK_TRANSITION_TIME` | 0.2s | Ground only — airborne ducking is instant |
+| `DUCK_SPEED_SCALE` | 1/3 | Ducked ground speed, as a fraction of `MAX_GROUND_SPEED` |
+
+`duck` is a continuous 0…1 on the player state, not a boolean, so the hull can animate and the
+camera can follow it without teleporting.
+
+**The asymmetry is the mechanic.** On the ground, the hull shrinks downward from the head and
+the feet stay planted. In the air it is the reverse: the head holds its arc and the *feet snap
+up* to meet it, so `position.y` (which is the feet) rises by `DUCK_HEIGHT_GAIN`. That is the
+crouch-jump — it clears 18 units more than a plain jump. It is instant rather than easing over
+`DUCK_TRANSITION_TIME`, because the timing window for tucking your legs mid-jump is what makes
+it a skill rather than a free bonus.
+
+Standing back up must check for room, or the player grows into whatever they crouched under: on
+the ground, sweep the ducked hull upward by the height difference; in the air, sweep it *down*
+by the same amount, since that is where the feet are about to go.
+
+Ducking scales ground speed only. Applying it airborne would make a crouch-jump cost air
+control, turning a movement technique into a penalty.
 
 ## Surf
 
@@ -136,7 +198,7 @@ function clipVelocity(vel, normal, overbounce = 1.0):
 | `MAX_GROUND_SPEED` | ~320 units/s | CS-like walk/run speed reference |
 | `FRICTION` | 4 | |
 | `STOP_SPEED` | 100 | Below this, friction stopping power doesn't scale down further |
-| `JUMP_IMPULSE` | tuned to reach a specific jump height, e.g. ~45 units | |
+| `JUMP_IMPULSE` | **382** | Apex is `impulse^2 / 2g` = 91 units, twice Source's ~45 |
 | `GRAVITY` | 800 units/s² | |
 | `GROUND_NORMAL_MIN_Y` | 0.7 | cos of ~45°; surfaces steeper than this are "surf," not "ground" |
 
