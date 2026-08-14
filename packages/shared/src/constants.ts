@@ -35,7 +35,15 @@ export const AIR_WISH_SPEED_CAP = 75;
 export const MAX_GROUND_SPEED = 320;
 export const FRICTION = 4;
 export const STOP_SPEED = 100;
-export const JUMP_IMPULSE = 270; // tune to hit a target jump height with GRAVITY below
+/**
+ * Apex height is JUMP_IMPULSE^2 / (2 * GRAVITY), so height scales with the *square* of this -
+ * tripling the jump means multiplying the impulse by sqrt(3), not by 3.
+ *
+ * 468 gives 468^2 / 1600 = 137 units, three times Source's ~45. Airtime roughly doubles too
+ * (2 * v / g, so 1.17s against 0.68s), which is worth knowing when tuning course spacing: a
+ * jump now covers about 375 units of ground at walk speed rather than 216.
+ */
+export const JUMP_IMPULSE = 468;
 export const GRAVITY = 800;
 
 // cos of ~45 degrees. Surfaces with a normal.y below this are treated as "surf," not "ground" -
@@ -88,9 +96,15 @@ export const GROUND_PROBE_SHRINK = 2;
 export const GROUND_PROBE_LIFT = 1;
 
 /**
- * Gap maintained between the player capsule and world geometry. Shape casts stop this far
- * short of contact so the capsule never starts a tick already touching a surface - a zero-gap
- * cast returns fraction 0 forever and the player sticks in place.
+ * Gap the movement code keeps between the player capsule and world geometry.
+ *
+ * Shape casts themselves report *exact* contact; this gap is maintained by movement, which
+ * backs off along the surface normal after every impact and rests the feet this far above the
+ * floor. The two must not be the same quantity. When casts instead treated "within SKIN_WIDTH"
+ * as a hit, a player standing on the floor sat exactly on that threshold, so each horizontal
+ * sweep resolved arbitrarily to hit or miss - and the hits carried a meaningless normal (near
+ * horizontal, on flat ground). Clipping velocity against those bogus normals fed upward and
+ * sideways speed in a little at a time until the player launched off level ground.
  */
 export const SKIN_WIDTH = 0.1;
 

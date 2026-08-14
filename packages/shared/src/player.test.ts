@@ -9,6 +9,8 @@ import {
   GROUND_PROBE_SHRINK,
   JUMP_IMPULSE,
   MAX_GROUND_SPEED,
+  PLAYER_HEIGHT,
+  SKIN_WIDTH,
   TICK_DT,
 } from "./constants.js";
 
@@ -54,13 +56,47 @@ test("wishDirection is normalized when two keys are held, so diagonals aren't fa
   assert.ok(Math.abs(vec3.length(diagonal) - 1) < 1e-9);
 });
 
-test("standing on flat ground stays grounded and does not sink", () => {
+test("standing on flat ground stays grounded and settles at a stable resting height", () => {
+  const world = flatGround();
   let state = createPlayerState({ x: 0, y: 0, z: 0 });
-  for (let i = 0; i < 64; i++) {
-    state = movePlayer(state, input(), flatGround(), TICK_DT);
-  }
+  for (let i = 0; i < 64; i++) state = movePlayer(state, input(), world, TICK_DT);
+
   assert.equal(state.onGround, true);
-  assert.ok(Math.abs(state.position.y) < 1e-6, `drifted to y=${state.position.y}`);
+  // Feet rest SKIN_WIDTH clear of the floor, not flush on it - see SKIN_WIDTH in constants.ts.
+  assert.ok(
+    Math.abs(state.position.y - SKIN_WIDTH) < 1e-6,
+    `settled at y=${state.position.y}, expected ${SKIN_WIDTH}`,
+  );
+
+  // And it has to stay there. Any per-tick creep is the bug that used to launch players off
+  // level ground, so assert the height is a fixed point rather than merely small.
+  const settled = state.position.y;
+  for (let i = 0; i < 64; i++) state = movePlayer(state, input(), world, TICK_DT);
+  assert.ok(
+    Math.abs(state.position.y - settled) < 1e-9,
+    `drifted from ${settled} to ${state.position.y}`,
+  );
+});
+
+test("walking in a straight line on flat ground never leaves the ground", () => {
+  const world = flatGround();
+  let state = createPlayerState({ x: 0, y: 0, z: 0 });
+  for (let i = 0; i < 16; i++) state = movePlayer(state, input({ forward: 1 }), world, TICK_DT);
+
+  // The regression this guards: a grazing floor contact during horizontal motion used to
+  // return an arbitrary normal, and clipping against it injected vertical velocity that
+  // accumulated until the player took off.
+  for (let i = 0; i < 256; i++) {
+    state = movePlayer(state, input({ forward: 1 }), world, TICK_DT);
+    assert.equal(state.onGround, true, `went airborne on flat ground at tick ${i}`);
+    assert.ok(
+      Math.abs(state.position.y - SKIN_WIDTH) < 1e-6,
+      `height drifted to ${state.position.y} at tick ${i}`,
+    );
+    assert.ok(Math.abs(state.velocity.y) < 1e-6, `gained vertical speed ${state.velocity.y}`);
+    // Walking forward must not develop sideways drift either.
+    assert.ok(Math.abs(state.velocity.x) < 1e-6, `gained sideways speed ${state.velocity.x}`);
+  }
 });
 
 test("jump leaves the ground and gravity brings the player back down", () => {
@@ -193,6 +229,68 @@ test("ground movement converges on MAX_GROUND_SPEED and no further", () => {
   assert.ok(speed <= MAX_GROUND_SPEED + 1e-6, `exceeded ground cap: ${speed}`);
 });
 
+// tiltedPlane slopes down toward -X, so yaw +90deg faces downhill and -90deg faces uphill.
+const DOWNHILL_YAW = Math.PI / 2;
+const UPHILL_YAW = -Math.PI / 2;
+
+test("walking down a slope stays glued to it instead of flickering airborne", () => {
+  const world = tiltedPlane(20);
+  let state = createPlayerState(vec3.zero());
+  for (let i = 0; i < 64; i++) {
+    state = movePlayer(state, input({ forward: 1, yaw: DOWNHILL_YAW }), world, TICK_DT);
+  }
+
+  // Movement integrates horizontally, so descending ground falls away underneath at
+  // speed * dt * tan(angle) per tick - past GROUND_CHECK_DIST that reads as airborne, which
+  // costs friction, ground acceleration, and (since jumping needs onGround) auto-bhop.
+  for (let i = 0; i < 256; i++) {
+    state = movePlayer(state, input({ forward: 1, yaw: DOWNHILL_YAW }), world, TICK_DT);
+    assert.equal(state.onGround, true, `went airborne descending a walkable slope at tick ${i}`);
+  }
+});
+
+test("auto-bhop keeps chaining while heading down a slope", () => {
+  const world = tiltedPlane(20);
+  let state = createPlayerState(vec3.zero());
+  for (let i = 0; i < 64; i++) {
+    state = movePlayer(state, input({ forward: 1, yaw: DOWNHILL_YAW }), world, TICK_DT);
+  }
+
+  let jumps = 0;
+  let previousY = state.velocity.y;
+  for (let i = 0; i < 256; i++) {
+    state = movePlayer(state, input({ forward: 1, jump: true, yaw: DOWNHILL_YAW }), world, TICK_DT);
+    // A jump is the only thing that makes vertical velocity leap upward by the impulse.
+    if (state.velocity.y - previousY > JUMP_IMPULSE * 0.5) jumps++;
+    previousY = state.velocity.y;
+  }
+  assert.ok(jumps > 2, `only ${jumps} jumps fired while bhopping downhill`);
+});
+
+test("walking up a slope climbs it without ever leaving the ground", () => {
+  const world = tiltedPlane(20);
+  let state = createPlayerState(vec3.zero());
+  for (let i = 0; i < 64; i++) {
+    state = movePlayer(state, input({ forward: 1, yaw: UPHILL_YAW }), world, TICK_DT);
+  }
+
+  const startY = state.position.y;
+  for (let i = 0; i < 128; i++) {
+    state = movePlayer(state, input({ forward: 1, yaw: UPHILL_YAW }), world, TICK_DT);
+    assert.equal(state.onGround, true, `went airborne climbing a walkable slope at tick ${i}`);
+  }
+
+  assert.ok(state.position.y > startY + 100, `barely climbed: ${startY} -> ${state.position.y}`);
+  // Climbing resolves through the stair-step path rather than the slide, so vertical velocity
+  // stays at zero and the height comes from the step's landing trace. Either route is fine;
+  // what must not happen is inferring "airborne" from an upward-clipped velocity, which used to
+  // drop friction and ground acceleration for the whole climb.
+  assert.ok(
+    vec3.horizontalLength(state.velocity) > MAX_GROUND_SPEED * 0.9,
+    `lost speed climbing: ${vec3.horizontalLength(state.velocity)}`,
+  );
+});
+
 test("a 20-degree slope is walkable, a 55-degree surf ramp is not", () => {
   const walkable = movePlayer(createPlayerState(vec3.zero()), input(), tiltedPlane(20), TICK_DT);
   assert.ok(Math.cos((20 * Math.PI) / 180) > GROUND_NORMAL_MIN_Y);
@@ -297,6 +395,56 @@ test("standing on a floor while pressed against a wall stays grounded", () => {
   const state = movePlayer(createPlayerState({ x: 0, y: 0, z: 0 }), input(), world, TICK_DT);
   assert.equal(state.onGround, true);
   assert.equal(state.groundNormal.y, 1);
+});
+
+/** Floor at y = 0 with a ceiling overhead, to exercise downward-facing contact normals. */
+function room(ceilingHeight: number): CollisionWorld {
+  return {
+    castPlayer(from: Vec3, delta: Vec3) {
+      if (delta.y < 0) {
+        const dist = from.y;
+        if (dist + delta.y > 0) return null;
+        const fraction = dist <= 0 ? 0 : dist / -delta.y;
+        return { fraction: Math.min(Math.max(fraction, 0), 1), normal: { x: 0, y: 1, z: 0 } };
+      }
+      if (delta.y > 0) {
+        const headroom = ceilingHeight - (from.y + PLAYER_HEIGHT);
+        if (delta.y < headroom) return null;
+        const fraction = headroom <= 0 ? 0 : headroom / delta.y;
+        return { fraction: Math.min(Math.max(fraction, 0), 1), normal: { x: 0, y: -1, z: 0 } };
+      }
+      return null;
+    },
+  };
+}
+
+test("jumping into a ceiling stops you dead rather than sticking or clipping through", () => {
+  const headroom = 20;
+  const world = room(PLAYER_HEIGHT + headroom);
+  let state = createPlayerState({ x: 0, y: 0, z: 0 });
+
+  state = movePlayer(state, input({ jump: true }), world, TICK_DT);
+  assert.equal(state.onGround, false);
+
+  let peak = 0;
+  let landed = false;
+  for (let i = 0; i < 128; i++) {
+    state = movePlayer(state, input(), world, TICK_DT);
+    peak = Math.max(peak, state.position.y);
+    // The head must never pass through the ceiling, even for a tick.
+    assert.ok(
+      state.position.y <= headroom + 1e-3,
+      `clipped through the ceiling to y=${state.position.y} at tick ${i}`,
+    );
+    if (state.onGround) {
+      landed = true;
+      break;
+    }
+  }
+
+  // Unobstructed this jump would reach ~45.6; the ceiling has to be what stopped it.
+  assert.ok(peak > headroom - 1, `never actually reached the ceiling (peak ${peak})`);
+  assert.ok(landed, "player stuck against the ceiling instead of falling back down");
 });
 
 test("falling through empty space accelerates at exactly GRAVITY", () => {

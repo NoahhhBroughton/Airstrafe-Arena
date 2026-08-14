@@ -103,7 +103,11 @@ export function wishDirection(input: PlayerInput): Vec3 {
 
 interface GroundProbe {
   normal: Vec3;
-  /** Gap between the feet and the floor, so the caller can close it. */
+  /**
+   * How far to move the feet to sit exactly SKIN_WIDTH above the floor. Usually positive
+   * (settle down onto it); slightly negative when the feet ended up flush against or inside
+   * the surface, in which case the player is nudged back out to the resting gap.
+   */
   distance: number;
 }
 
@@ -114,9 +118,13 @@ interface GroundProbe {
  * starts clear of both the floor underneath and any wall alongside - see the two constants for
  * why each is needed.
  */
-function probeGround(position: Vec3, world: CollisionWorld): GroundProbe | null {
+function probeGround(
+  position: Vec3,
+  world: CollisionWorld,
+  distance = GROUND_CHECK_DIST,
+): GroundProbe | null {
   const start = { x: position.x, y: position.y + GROUND_PROBE_LIFT, z: position.z };
-  const length = GROUND_PROBE_LIFT + GROUND_CHECK_DIST;
+  const length = GROUND_PROBE_LIFT + distance;
 
   const hit = world.castPlayer(start, { x: 0, y: -length, z: 0 }, GROUND_PROBE_SHRINK);
   if (!hit) return null;
@@ -124,13 +132,27 @@ function probeGround(position: Vec3, world: CollisionWorld): GroundProbe | null 
   // Rejecting it is what keeps friction and ground-accelerate off while surfing.
   if (hit.normal.y < GROUND_NORMAL_MIN_Y) return null;
 
-  // Take the lift back off, leaving the gap between the feet and where they should rest.
-  return { normal: hit.normal, distance: Math.max(hit.fraction * length - GROUND_PROBE_LIFT, 0) };
+  // Take the lift back off, then hold the feet SKIN_WIDTH clear of the surface rather than on
+  // it. Allowed to go slightly negative so a player resting flush is lifted back to the gap -
+  // bounded by SKIN_WIDTH, far too small to push anyone through a ceiling.
+  const toContact = hit.fraction * length - GROUND_PROBE_LIFT;
+  return {
+    normal: hit.normal,
+    distance: Math.max(toContact - SKIN_WIDTH, -SKIN_WIDTH),
+  };
 }
 
 interface SlideResult {
   position: Vec3;
   velocity: Vec3;
+  /**
+   * Whether a surface actually opposed the motion, as opposed to merely being touched.
+   *
+   * The distinction matters because the floor you are standing on registers as a contact on
+   * every horizontal sweep - the capsule rests within the cast's contact tolerance. Treating
+   * that as an obstruction makes the caller try to step over the ground it is already on.
+   */
+  blocked: boolean;
 }
 
 /**
@@ -147,6 +169,7 @@ function slideMove(
 ): SlideResult {
   let pos = position;
   let vel = velocity;
+  let blocked = false;
   const planes: Vec3[] = [];
   let timeLeft = dt;
 
@@ -161,20 +184,24 @@ function slideMove(
       break;
     }
 
+    // Only a surface we are moving *into* can stop us. A surface we are sliding along - most
+    // often the floor, during ordinary walking - is contact without obstruction.
+    if (vec3.dot(vel, hit.normal) < -EPSILON) blocked = true;
+
     if (hit.fraction > 0) {
       pos = vec3.scaleAndAdd(pos, delta, hit.fraction);
-    } else {
-      // Zero-fraction hit: we started the sweep already touching this surface, usually because
-      // the previous iteration clipped velocity exactly tangent to it. Without a nudge the
-      // sweep reports the same contact forever, burns all four iterations making no progress,
-      // and the player stops dead partway down a ramp. Lift clear along the normal - well
-      // under GROUND_CHECK_DIST, so it cannot shake a genuine ground contact loose.
-      pos = vec3.scaleAndAdd(pos, hit.normal, SKIN_WIDTH);
     }
+    // Always come to rest SKIN_WIDTH clear of whatever we touched, rather than flush against
+    // it. Sitting exactly on a surface makes the next sweep start at zero distance, where the
+    // contact resolves arbitrarily and its normal is meaningless. It also guarantees progress
+    // out of a zero-fraction graze, which would otherwise repeat until the iterations run out
+    // and leave the player stopped dead partway down a ramp.
+    pos = vec3.scaleAndAdd(pos, hit.normal, SKIN_WIDTH);
     timeLeft -= timeLeft * hit.fraction;
 
     if (planes.length >= MAX_CLIP_PLANES) {
       vel = vec3.zero();
+      blocked = true;
       break;
     }
     // Grazing the same surface on consecutive iterations would otherwise record it twice, and
@@ -188,18 +215,20 @@ function slideMove(
     const clipped = clipVelocityAgainstPlanes(vel, planes);
     if (!clipped) {
       vel = vec3.zero();
+      blocked = true;
       break;
     }
     // If clipping reversed us relative to where we were heading, we're in a wedge that would
     // otherwise oscillate the player back and forth. Stop instead.
     if (vec3.dot(clipped, velocity) <= 0) {
       vel = vec3.zero();
+      blocked = true;
       break;
     }
     vel = clipped;
   }
 
-  return { position: pos, velocity: vel };
+  return { position: pos, velocity: vel, blocked };
 }
 
 /** Sweep along `delta` and stop just short of contact, keeping the skin gap intact. */
@@ -226,6 +255,13 @@ function stepMove(
   const flat = slideMove(position, velocity, dt, world);
   if (!velocity.x && !velocity.z) return flat;
 
+  // Nothing stopped us, so there is nothing to step over. Skipping here is not just an
+  // optimisation: on open ground the flat sweep grazes the floor, and attempting a step anyway
+  // meant lifting the capsule STEP_HEIGHT, sliding, and dropping it again every single tick.
+  // The drop rarely landed at exactly the original height, so the player crept upward and
+  // flickered in and out of ground state while simply walking in a straight line.
+  if (!flat.blocked) return flat;
+
   const up = sweep(position, { x: 0, y: STEP_HEIGHT, z: 0 }, world);
   const stepped = slideMove(up, velocity, dt, world);
   const down = world.castPlayer(stepped.position, { x: 0, y: -STEP_HEIGHT, z: 0 });
@@ -246,6 +282,7 @@ function stepMove(
   return {
     position: landed,
     velocity: { x: stepped.velocity.x, y: Math.max(stepped.velocity.y, 0), z: stepped.velocity.z },
+    blocked: stepped.blocked,
   };
 }
 
@@ -262,17 +299,21 @@ export function movePlayer(
   let velocity = vec3.clone(state.velocity);
   let position = vec3.clone(state.position);
 
-  // 1. Where are we standing? Skip the probe while moving up, or a jump's first tick would
-  //    immediately re-detect the floor it just left and cancel itself.
-  let ground = velocity.y > 0 ? null : probeGround(position, world);
+  // 1. Where are we standing? Note this asks the world, not the velocity: walking up a slope
+  //    leaves velocity clipped *along* it and therefore rising, and treating "moving upward"
+  //    as "airborne" would drop friction and ground acceleration for the whole climb.
+  let ground = probeGround(position, world);
   let onGround = ground !== null;
+  /** Ground state before the jump can clear it - the step-down at the end keys off this. */
+  const wasOnGround = onGround;
 
   if (onGround && velocity.y < 0) velocity.y = 0;
 
   // 2. Jump. Horizontal velocity is untouched on purpose - carrying it through the jump is the
   //    entire basis of a bhop chain (MOVEMENT_SPEC.md "Jump").
   const wantsJump = input.jump && (autoBhop || !state.jumpHeld);
-  if (onGround && wantsJump) {
+  const jumped = onGround && wantsJump;
+  if (jumped) {
     velocity.y = JUMP_IMPULSE;
     onGround = false;
     ground = null;
@@ -314,7 +355,21 @@ export function movePlayer(
 
   // 6. Re-check ground so the returned state reflects where the player actually ended up -
   //    the renderer, the HUD, and next tick's jump check all read this.
-  const landedProbe = velocity.y > 0 ? null : probeGround(position, world);
+  // Skip entirely on the tick we jumped, or the probe re-finds the floor we just left and
+  // cancels the jump before it starts.
+  let landedProbe = jumped ? null : probeGround(position, world);
+
+  // Step down. Walking is integrated horizontally, so on any descending surface the ground
+  // falls away underneath you: at speed v on a slope of angle a, each tick drops v * dt * tan(a)
+  // below where you were. Past GROUND_CHECK_DIST that reads as *airborne* - which costs friction
+  // and ground acceleration, and (because a jump needs onGround) silently kills auto-bhop the
+  // moment you point yourself downhill. Reaching further down to reattach is what keeps you
+  // glued to slopes and stairs. Only when already grounded and not on the way up, so it can
+  // never yank a jump back to the floor.
+  if (!landedProbe && wasOnGround && !jumped && velocity.y <= 0) {
+    landedProbe = probeGround(position, world, STEP_HEIGHT);
+  }
+
   const landed = landedProbe !== null;
   if (landedProbe) {
     // Close the gap to the floor. Without this the player rests wherever the probe first found

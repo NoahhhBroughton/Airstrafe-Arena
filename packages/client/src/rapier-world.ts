@@ -84,7 +84,11 @@ export function createRapierWorld(map: MapDef): CollisionWorld {
         IDENTITY_ROTATION,
         delta,
         capsuleFor(shrink),
-        SKIN_WIDTH, // stop this far short of contact, so the next sweep never starts touching
+        // Report exact contact, not "within SKIN_WIDTH". Movement keeps its own clearance by
+        // backing off along the normal; folding that clearance into the cast tolerance instead
+        // puts a resting player exactly on the hit/miss boundary, where the reported normal is
+        // arbitrary. See SKIN_WIDTH in constants.ts.
+        0,
         1.0, // maxToi of 1 means "travel at most `delta`", making time_of_impact a fraction
         true, // report a hit rather than sliding through if we somehow start penetrating
       );

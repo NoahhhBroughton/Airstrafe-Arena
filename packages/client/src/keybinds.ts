@@ -51,9 +51,9 @@ export function defaultBinds(spots: readonly MapSpot[]): Binds {
     moveBack: ["KeyS", null],
     moveLeft: ["KeyA", null],
     moveRight: ["KeyD", null],
-    // Wheel-down on the secondary by default: it is the standard bhop bind, and having it there
-    // out of the box shows the two-slot system doing something rather than sitting empty.
-    jump: ["Space", "WheelDown"],
+    // Secondary is deliberately empty. Wheel-jump is the obvious thing to put here, but it is
+    // a preference, not a default - an unasked-for wheel bind means every stray scroll jumps.
+    jump: ["Space", null],
     respawn: ["KeyR", null],
   };
   spots.forEach((_, i) => {

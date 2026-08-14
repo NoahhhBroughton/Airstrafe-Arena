@@ -91,6 +91,25 @@ export const TEST_MAP: MapDef = {
 
     ...bhopStaircase(),
 
+    // --- Head-bonk shelter, off to -X --------------------------------------------------
+    // A roof 100 units up: walk under it freely at 72 tall, jump and you hit your head. The
+    // only geometry in the map with a downward-facing surface, so it is the only thing that
+    // exercises ceiling collision at all. Off the main paths on purpose - a low roof anywhere
+    // near the bhop run would just interrupt it.
+    {
+      center: { x: -600, y: 120, z: 0 },
+      halfExtents: { x: 300, y: 20, z: 300 },
+      color: STRUCTURE_COLOR,
+    },
+    // Corner posts only - full-length walls would fence the shelter off entirely.
+    ...[-880, -320].flatMap((x) =>
+      [-280, 280].map((z) => ({
+        center: { x, y: 50, z },
+        halfExtents: { x: 20, y: 50, z: 20 },
+        color: STRUCTURE_COLOR,
+      })),
+    ),
+
     // --- Surf section, off to +X -------------------------------------------------------
     // A walkable ramp climbs to a platform; you step off the platform onto the steep ramp
     // and ride it down. Two ramps at different angles, either side of GROUND_NORMAL_MIN_Y,
