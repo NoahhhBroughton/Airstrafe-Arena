@@ -29,13 +29,25 @@ Then open the printed URL and click the canvas to lock the mouse.
 | Key | |
 |---|---|
 | `WASD` | move |
-| `Space` | jump (one press per jump — `AUTO_BHOP_ENABLED` is off) |
+| `Space` | jump — hold it to keep bhopping (auto-bhop is on by default) |
 | `1` / `2` / `3` | teleport to the spawn / bhop staircase / surf platform |
 | `R` | respawn |
-| `Esc` | release the mouse |
+| `Esc` | settings |
 
 The HUD's speed graph is the main tuning instrument: the dashed line is `MAX_GROUND_SPEED`, and
 the trace turns blue above it — anything up there came from air strafing.
+
+### Settings
+
+`Esc` opens the settings screen. Movement values there are live — change air acceleration and
+the next tick uses it, no reload. They're client-side tuning knobs for now; Phase 3 moves
+authority for them to the server.
+
+Sensitivity is 1:1 with Source (`degrees = m_yaw * sensitivity * rawCounts`, `m_yaw` 0.022), so
+whatever number you use in CS transfers directly. That parity depends on raw input — the game
+asks the browser for unadjusted pointer movement to bypass the OS acceleration curve, and the
+settings screen tells you whether it got it. FOV is likewise quoted the Source way: horizontal
+at 4:3, widening on wider displays.
 
 ## Test
 

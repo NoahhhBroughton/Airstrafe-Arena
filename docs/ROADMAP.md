@@ -28,18 +28,28 @@ persistent memory of project progress across sessions.
   good. This is a subjective, human judgment call — don't skip it or self-certify from code review
   alone. Get actual playtesting in before moving on.
 
-### Known Phase 1 tuning questions for the playtest
-Things measured as working but not judged as *feeling* right — decide these at the keyboard,
-then update `docs/MOVEMENT_SPEC.md` with whatever the constants become:
+### Settled by the first playtest
+- **Air acceleration was far too low.** Shipped at Source's stock 10, which only steers 4.7 u/s
+  per tick — "can't properly turn in the air." Now 100, matching what surf/bhop servers run.
+  Note it saturates above 64 at our tick rate, so 100 and 1000 are identical; see
+  `MOVEMENT_SPEC.md`.
+- **Auto-bhop is now on by default.** The original spec called for a fresh press per jump; that
+  is not how the reference servers play.
+- **Settings screen added** (`Esc`), with live movement tuning, Source-1:1 sensitivity, and raw
+  input to bypass OS mouse acceleration.
+
+### Still open for the playtest
+Measured as working but not judged as *feeling* right — decide at the keyboard, then update
+`docs/MOVEMENT_SPEC.md` with whatever the constants become:
 - Surf ramp is short: the drop from the start platform to where the ramp meets the ground is
   ~414 units, so a ride lasts about a second unless you carry speed along its length. If it
   wants to be a real ride, the surf section needs to be taller (which means redoing the access
   ramp too).
 - Bhop staircase spacing (260 units) and rise (36) were picked from jump-arc arithmetic, not
   from playing it.
-- Mouse sensitivity defaults to 2.0 at Source's `m_yaw` of 0.022 — no in-game way to change it
-  yet.
-- `AUTO_BHOP_ENABLED` is off, so every jump needs a fresh press. Worth trying both.
+- `AIR_WISH_SPEED_CAP` (30) is the real air-control dial now that acceleration is saturated —
+  the most likely knob to want changing if strafing still doesn't feel right.
+- Verify the sensitivity match with a 360° test against CS rather than trusting it on paper.
 
 ## Phase 2 — Test content
 - [ ] A few more surf ramps at different angles

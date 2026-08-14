@@ -5,37 +5,52 @@
 // current when a tick runs.
 
 import type { PlayerInput } from "@airstrafe-arena/shared";
+import type { SettingsStore } from "./settings.js";
 
-/**
- * Source's m_yaw: degrees of rotation per unit of raw mouse movement, before sensitivity.
- * Keeping this identical means a CS player's sensitivity number transfers directly.
- */
-const DEGREES_PER_COUNT = 0.022;
 const DEG_TO_RAD = Math.PI / 180;
 
 /** Just short of straight up/down - exactly 90 makes the view basis degenerate. */
 const MAX_PITCH = 89.9 * DEG_TO_RAD;
 
+/**
+ * `requestPointerLock` accepts an options bag in browsers that support unadjusted movement, and
+ * returns a promise there. TypeScript's DOM lib types it as the older no-argument, void-returning
+ * form depending on version, so this narrows it locally rather than reaching for `any`.
+ */
+interface PointerLockElement {
+  requestPointerLock(options?: { unadjustedMovement?: boolean }): Promise<void> | undefined;
+}
+
 export interface InputState {
   readonly yaw: number;
   readonly pitch: number;
   readonly locked: boolean;
-  sensitivity: number;
-  /** Point the view somewhere, e.g. after teleporting to a test spot. */
+  /**
+   * Whether the browser actually granted unadjusted (OS-acceleration-free) movement. Surfaced
+   * because it decides whether the sensitivity number really matches Source or only
+   * approximately - the user deserves to know which.
+   */
+  readonly rawInputActive: boolean;
   setYaw(yaw: number): void;
+  requestLock(): void;
   /** Snapshot of the movement input for one simulation tick. */
   sample(): PlayerInput;
   dispose(): void;
 }
 
-export function createInput(canvas: HTMLCanvasElement, initialYaw: number): InputState {
+export function createInput(
+  canvas: HTMLCanvasElement,
+  settings: SettingsStore,
+  initialYaw: number,
+): InputState {
   const keys = new Set<string>();
   let yaw = initialYaw;
   let pitch = 0;
   let locked = false;
-  let sensitivity = 2.0;
+  let rawInputActive = false;
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.target instanceof HTMLInputElement) return; // typing in the settings panel
     keys.add(e.code);
     // Space scrolls the page otherwise, which is very noticeable while bhopping.
     if (e.code === "Space") e.preventDefault();
@@ -44,7 +59,9 @@ export function createInput(canvas: HTMLCanvasElement, initialYaw: number): Inpu
 
   const onMouseMove = (e: MouseEvent) => {
     if (!locked) return;
-    const scale = DEGREES_PER_COUNT * sensitivity * DEG_TO_RAD;
+    // Source's formula exactly: degrees = m_yaw * sensitivity * raw counts. Given raw input,
+    // this makes sensitivity 1 here turn the same arc as sensitivity 1 in CS.
+    const scale = settings.current.mYaw * settings.current.sensitivity * DEG_TO_RAD;
     yaw -= e.movementX * scale;
     pitch -= e.movementY * scale;
     pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, pitch));
@@ -55,16 +72,54 @@ export function createInput(canvas: HTMLCanvasElement, initialYaw: number): Inpu
   const onPointerLockChange = () => {
     locked = document.pointerLockElement === canvas;
     // Keys held when focus is lost would otherwise stick down forever.
-    if (!locked) keys.clear();
+    if (!locked) {
+      keys.clear();
+      rawInputActive = false;
+    }
   };
 
-  const onClick = () => {
-    if (!locked) void canvas.requestPointerLock();
+  const requestLock = (): void => {
+    if (locked) return;
+    const element = canvas as unknown as PointerLockElement;
+
+    if (settings.current.rawInput) {
+      try {
+        const pending = element.requestPointerLock({ unadjustedMovement: true });
+        if (pending instanceof Promise) {
+          pending.then(
+            () => {
+              rawInputActive = true;
+            },
+            () => {
+              // The browser or platform can't provide unadjusted movement. Fall back to the
+              // ordinary lock so the game still plays - just not perfectly Source-matched.
+              rawInputActive = false;
+              element.requestPointerLock();
+            },
+          );
+          return;
+        }
+        // No promise means an older implementation that ignored the options bag entirely, so
+        // the lock is proceeding but without raw movement.
+        rawInputActive = false;
+        return;
+      } catch {
+        rawInputActive = false;
+      }
+    }
+
+    rawInputActive = false;
+    const pending = element.requestPointerLock();
+    if (pending instanceof Promise) pending.catch(() => undefined);
   };
+
+  const onClick = () => requestLock();
+
+  const onBlur = () => keys.clear();
 
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
-  window.addEventListener("blur", () => keys.clear());
+  window.addEventListener("blur", onBlur);
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("pointerlockchange", onPointerLockChange);
   canvas.addEventListener("click", onClick);
@@ -82,17 +137,16 @@ export function createInput(canvas: HTMLCanvasElement, initialYaw: number): Inpu
     get locked() {
       return locked;
     },
-    get sensitivity() {
-      return sensitivity;
-    },
-    set sensitivity(value: number) {
-      sensitivity = value;
+    get rawInputActive() {
+      return rawInputActive;
     },
 
     setYaw(value: number) {
       yaw = value;
       pitch = 0;
     },
+
+    requestLock,
 
     sample(): PlayerInput {
       // Unfocused means no input at all, rather than freezing the last one - otherwise
@@ -109,6 +163,7 @@ export function createInput(canvas: HTMLCanvasElement, initialYaw: number): Inpu
     dispose() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("pointerlockchange", onPointerLockChange);
       canvas.removeEventListener("click", onClick);

@@ -71,10 +71,9 @@ test("jump leaves the ground and gravity brings the player back down", () => {
   assert.equal(state.onGround, false);
   assert.ok(state.position.y > 0);
 
-  // Hold jump: with auto-bhop off this must not re-trigger, so the player lands again.
   let landed = false;
   for (let i = 0; i < 128; i++) {
-    state = movePlayer(state, input({ jump: true }), world, TICK_DT);
+    state = movePlayer(state, input(), world, TICK_DT);
     if (state.onGround) {
       landed = true;
       break;
@@ -101,18 +100,60 @@ test("jump height matches the analytic JUMP_IMPULSE^2 / 2g", () => {
   );
 });
 
-test("auto-bhop off requires a fresh press; auto-bhop on re-jumps while held", () => {
+test("auto-bhop re-jumps on a held key; turning it off requires a fresh press", () => {
   const world = flatGround();
-
-  let held = createPlayerState({ x: 0, y: 0, z: 0 });
-  held = movePlayer(held, input({ jump: true }), world, TICK_DT); // takes off
-  // jumpHeld is now true, so a grounded player holding jump must not launch again.
+  // Grounded with jump already held from a previous tick - the moment the two modes differ.
   const grounded = { ...createPlayerState({ x: 0, y: 0, z: 0 }), jumpHeld: true };
-  const blocked = movePlayer(grounded, input({ jump: true }), world, TICK_DT);
-  assert.equal(blocked.onGround, true, "held jump should not re-trigger with auto-bhop off");
 
   const auto = movePlayer(grounded, input({ jump: true }), world, TICK_DT, { autoBhop: true });
   assert.equal(auto.onGround, false, "auto-bhop should re-trigger on a held jump");
+
+  const manual = movePlayer(grounded, input({ jump: true }), world, TICK_DT, { autoBhop: false });
+  assert.equal(manual.onGround, true, "held jump should not re-trigger with auto-bhop off");
+
+  // A fresh press still works in manual mode.
+  const fresh = movePlayer(
+    { ...grounded, jumpHeld: false },
+    input({ jump: true }),
+    world,
+    TICK_DT,
+    { autoBhop: false },
+  );
+  assert.equal(fresh.onGround, false);
+});
+
+test("the default is auto-bhop on, matching surf/bhop server convention", () => {
+  const grounded = { ...createPlayerState({ x: 0, y: 0, z: 0 }), jumpHeld: true };
+  const state = movePlayer(grounded, input({ jump: true }), flatGround(), TICK_DT);
+  assert.equal(state.onGround, false);
+});
+
+test("air acceleration saturates above 1/dt, so larger values are indistinguishable", () => {
+  // The reason AIR_ACCEL is 100 rather than Source's 10: at 10 a tick can only steer
+  // 10 * 30 * dt = 4.7 u/s. Past 1/dt (64 here) accelSpeed is bounded by addSpeed instead,
+  // and every value above that behaves the same - so 100 and 1000 are the same setting.
+  // Measured as steering authority: already moving fast along -Z, how much sideways velocity
+  // can two ticks of holding strafe-right produce? From a standstill every setting saturates
+  // within a few ticks and looks the same - the difference only shows up mid-flight.
+  const start = {
+    ...createPlayerState({ x: 0, y: 1000, z: 0 }),
+    velocity: { x: 0, y: 0, z: -500 },
+  };
+
+  const steer = (airAccel: number) => {
+    let s = start;
+    for (let i = 0; i < 2; i++) {
+      s = movePlayer(s, input({ right: 1 }), emptyWorld, TICK_DT, { airAccel });
+    }
+    return s.velocity.x;
+  };
+
+  const sluggish = steer(10);
+  const responsive = steer(100);
+  const absurd = steer(1000);
+
+  assert.ok(responsive > sluggish * 2, `100 (${responsive}) should clearly beat 10 (${sluggish})`);
+  assert.equal(responsive, absurd, "everything past 1/dt should be identical");
 });
 
 test("jumping preserves horizontal momentum instead of zeroing it", () => {

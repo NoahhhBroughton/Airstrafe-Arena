@@ -61,6 +61,22 @@ Key: `wishSpeed` while airborne should be clamped low (e.g. ~30 units/s equivale
 the player's actual velocity can be much higher — this is *why* strafing compounds speed instead
 of just capping it like ground movement does. No friction is applied in air.
 
+### Air acceleration is not a linear dial
+
+`accelSpeed = min(airAccel * wishSpeed * dt, addSpeed)`, and `addSpeed` can never exceed
+`wishSpeed`. So once `airAccel >= 1/dt` — 64 at our tick rate — the first term stops binding and
+**every larger value behaves identically**. `sv_airaccelerate 100` and `1000` are the same
+setting here; they differ in Source only because servers run different tick rates.
+
+Below that line it is a real dial, and Source's default of 10 sits well below it: a tick can
+only steer `10 * 30 * dt` = 4.7 u/s, which feels like being unable to turn in the air at all.
+That is why surf and bhop servers raise it as the first thing they configure (~100 for combat
+surf, ~1000 for bhop), and why this project ships 100 rather than Source's stock value.
+
+The consequence worth internalising: **`AIR_WISH_SPEED_CAP` is the real air-control knob**, not
+`AIR_ACCEL`. Once acceleration is saturated, the cap alone decides how much velocity a tick can
+add and therefore how fast strafing compounds.
+
 Do not clamp total velocity magnitude while airborne except at a sane upper bound for anti-cheat /
 physics stability (e.g. a generous cap far above normal bhop speeds, just to prevent runaway
 float errors).
@@ -70,8 +86,14 @@ float errors).
 - On ground + jump input: set vertical velocity to a fixed jump impulse, do not preserve/reset
   horizontal velocity. Horizontal momentum carrying into a jump is what makes bhop chains work —
   never zero it on landing/jumping.
-- No auto-bhop by default (require a fresh press per jump) — but keep this as a named constant/
-  config flag, since some servers/game modes may want to toggle it.
+- **Auto-bhop is on by default** (`AUTO_BHOP_ENABLED = true`, Source's `sv_autobunnyhopping`):
+  holding jump keeps you hopping. This reverses the original draft of this spec, which called
+  for a fresh press per jump — that is not how surf and bhop servers play, which is the
+  reference feel this project is chasing. It remains a per-player flag (`MoveOptions.autoBhop`)
+  so a game mode can demand manual timing.
+- Friction is skipped on the tick you jump, because the jump sets `onGround` false before the
+  ground branch runs. That is deliberate and load-bearing: it is what lets a well-timed hop keep
+  all its speed while a late one gets scrubbed.
 
 ## Landing
 
@@ -105,7 +127,7 @@ function clipVelocity(vel, normal, overbounce = 1.0):
 | Constant | Starting value | Notes |
 |---|---|---|
 | `GROUND_ACCEL` | 10 | |
-| `AIR_ACCEL` | 10 | Same accel constant as ground; the airborne `wishSpeed` cap is what differs |
+| `AIR_ACCEL` | **100** | Source's `sv_airaccelerate`. See "Air acceleration is not a linear dial" below |
 | `AIR_WISH_SPEED_CAP` | ~30 units/s | Low cap is what makes strafing compound speed |
 | `MAX_GROUND_SPEED` | ~320 units/s | CS-like walk/run speed reference |
 | `FRICTION` | 4 | |
@@ -158,6 +180,25 @@ silently reappear if the collision layer is ever rewritten:
    degenerates, returning an arbitrary normal instead of the floor's. Without the shrink, a
    player pressed against a wall catches the wall's bottom corner first and gets a ~45° normal,
    reads as airborne, and cannot jump — which breaks bhopping any tight course.
+
+## Mouse input
+
+Air strafing is a mouse technique before it is a movement technique — the speed you gain is set
+by how closely your turn rate tracks the optimum. So view input is part of this spec, not a
+separate UI concern.
+
+Sensitivity uses Source's formula exactly: `degrees = m_yaw * sensitivity * rawCounts`, with
+`m_yaw` defaulting to 0.022. Sensitivity 1 here therefore turns the same arc as sensitivity 1 in
+CS — **but only if the deltas are raw**. Pointer lock's `movementX` is normally the *accelerated*
+cursor delta, so a fast flick covers more angle than the same distance moved slowly, and no
+single sensitivity number can match Source because the relationship isn't linear. The client
+requests `requestPointerLock({ unadjustedMovement: true })` to bypass the OS acceleration curve,
+and falls back to an ordinary lock if the browser refuses. The settings screen reports which one
+you actually got, because it decides whether the number means anything.
+
+For reference, the optimal turn rate while strafing is roughly
+`accelSpeed / speed` radians per tick — about 54°/s at 320 u/s with the default constants, and it
+*falls* as you speed up. This is why bhop chains need progressively gentler mouse movement.
 
 ## Testing movement in isolation
 

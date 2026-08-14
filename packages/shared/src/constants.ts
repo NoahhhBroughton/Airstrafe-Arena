@@ -6,7 +6,24 @@ export const TICK_RATE = 64;
 export const TICK_DT = 1 / TICK_RATE;
 
 export const GROUND_ACCEL = 10;
-export const AIR_ACCEL = 10;
+
+/**
+ * Air acceleration - Source's `sv_airaccelerate`.
+ *
+ * Source ships 10, and surf/bhop servers raise it as the first thing they do: combat surf runs
+ * ~100, bhop servers ~1000. At 10 a tick can only steer AIR_ACCEL * AIR_WISH_SPEED_CAP * dt =
+ * 4.7 u/s, so mid-air turning is sluggish and strafing barely compounds - which is exactly what
+ * "can't properly turn in the air" feels like.
+ *
+ * There is a ceiling worth knowing about. accelSpeed is min(accel * wishSpeed * dt, addSpeed),
+ * and addSpeed can never exceed wishSpeed, so once accel >= 1/dt (64 at our tick rate) the
+ * first term stops binding and every larger value behaves identically. 100 is past that line,
+ * i.e. already maximum responsiveness - raising it to 1000 would change nothing here. Below 64
+ * it is a real dial. This also means the meaningful knob for air control is
+ * AIR_WISH_SPEED_CAP, not this.
+ */
+export const AIR_ACCEL = 100;
+
 export const AIR_WISH_SPEED_CAP = 30;
 export const MAX_GROUND_SPEED = 320;
 export const FRICTION = 4;
@@ -18,8 +35,13 @@ export const GRAVITY = 800;
 // they don't get friction/ground-accelerate, and velocity is clipped along them instead.
 export const GROUND_NORMAL_MIN_Y = 0.7;
 
-// Config flag, not a hard rule - see docs/MOVEMENT_SPEC.md "Jump" section.
-export const AUTO_BHOP_ENABLED = false;
+/**
+ * Hold jump to keep bhopping, instead of needing a fresh press per jump - Source's
+ * `sv_autobunnyhopping`. On, because that is what surf and bhop servers run and what chaining
+ * jumps is expected to feel like. Still a flag, not a hard rule: a game mode that wants manual
+ * jump timing can turn it off per-player (see MoveOptions).
+ */
+export const AUTO_BHOP_ENABLED = true;
 
 // --- Player collision shape -------------------------------------------------------------
 

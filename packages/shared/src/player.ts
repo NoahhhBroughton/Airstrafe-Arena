@@ -59,8 +59,18 @@ export interface PlayerInput {
   yaw: number;
 }
 
+/**
+ * Per-call overrides for the tuning constants that change how movement *feels*. Anything
+ * omitted falls back to the value in constants.ts, which stays the source of truth.
+ *
+ * These exist so a tuning UI can turn a knob and feel the result immediately rather than
+ * rebuilding. In Phase 3 the server owns these values and sends them to the client - a client
+ * that picks its own air acceleration is a client that can outrun everyone else.
+ */
 export interface MoveOptions {
   autoBhop?: boolean;
+  airAccel?: number;
+  airWishSpeedCap?: number;
 }
 
 export function createPlayerState(position: Vec3): PlayerState {
@@ -283,7 +293,8 @@ export function movePlayer(
       velocity,
       wishDir,
       dt,
-      airWishSpeed(MAX_GROUND_SPEED * inputMagnitude),
+      airWishSpeed(MAX_GROUND_SPEED * inputMagnitude, options.airWishSpeedCap),
+      options.airAccel,
     );
   }
 

@@ -20,6 +20,8 @@ import { createRapierWorld, initRapier } from "./rapier-world.js";
 import { createInput } from "./input.js";
 import { buildMapScene } from "./scene.js";
 import { createHud } from "./hud.js";
+import { createSettingsStore, verticalFovDegrees } from "./settings.js";
+import { createSettingsUi } from "./settings-ui.js";
 
 /**
  * Ticks we're willing to run in one frame before giving up on catching up. Without this, a
@@ -39,8 +41,10 @@ async function main(): Promise<void> {
   const collision = createRapierWorld(map);
   const scene = buildMapScene(map);
 
+  const settings = createSettingsStore();
+
   const camera = new THREE.PerspectiveCamera(
-    100, // wide, like a Source FOV of ~90 horizontal - narrow FOV makes speed unreadable
+    verticalFovDegrees(settings.current.fov),
     window.innerWidth / window.innerHeight,
     1,
     8000,
@@ -51,8 +55,14 @@ async function main(): Promise<void> {
   renderer.setSize(window.innerWidth, window.innerHeight);
   app.appendChild(renderer.domElement);
 
-  const input = createInput(renderer.domElement, map.spawnYaw);
+  const input = createInput(renderer.domElement, settings, map.spawnYaw);
   const hud = createHud(app, map.spots);
+  const menu = createSettingsUi(app, settings, () => input.requestLock());
+
+  settings.subscribe((current) => {
+    camera.fov = verticalFovDegrees(current.fov);
+    camera.updateProjectionMatrix();
+  });
 
   let state: PlayerState = createPlayerState(map.spawn);
   // Position at the end of the previous tick, so rendering can interpolate toward the current
@@ -66,6 +76,8 @@ async function main(): Promise<void> {
   };
 
   window.addEventListener("keydown", (e) => {
+    // Typing "2" into a settings field should not teleport you to the bhop course.
+    if (e.target instanceof HTMLInputElement) return;
     if (e.code === "KeyR") {
       teleport(map.spawn, map.spawnYaw);
       return;
@@ -95,11 +107,15 @@ async function main(): Promise<void> {
     lastFrameTime = now;
     smoothedFps += (1 / Math.max(frameDt, 1e-6) - smoothedFps) * 0.1;
 
+    // Read tuning fresh every frame so the settings panel's effect is immediate.
+    const { autoBhop, airAccel, airWishSpeedCap } = settings.current;
+    const moveOptions = { autoBhop, airAccel, airWishSpeedCap };
+
     accumulator += frameDt;
     let ticks = 0;
     while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
       previousPosition = state.position;
-      state = movePlayer(state, input.sample(), collision, TICK_DT);
+      state = movePlayer(state, input.sample(), collision, TICK_DT, moveOptions);
       accumulator -= TICK_DT;
       ticks++;
     }
@@ -118,6 +134,9 @@ async function main(): Promise<void> {
     camera.rotation.set(input.pitch, input.yaw, 0, "YXZ");
 
     hud.update(state, smoothedFps, input.locked);
+    // Unlocked means the menu is up - Esc is the settings key, as in any shooter.
+    menu.setVisible(!input.locked);
+    menu.setRawInputActive(input.rawInputActive);
     renderer.render(scene, camera);
   }
 

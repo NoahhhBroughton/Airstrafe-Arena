@@ -79,17 +79,106 @@
       }
       .hud-spots b { font-weight: 600; opacity: 0.45; margin-right: 8px; }
 
-      .hud-hint {
-        position: absolute;
-        left: 50%;
-        top: 58%;
-        transform: translateX(-50%);
-        padding: 6px 12px;
-        background: rgba(12, 14, 18, 0.72);
-        border-radius: 4px;
-        opacity: 1;
-        transition: opacity 0.25s;
+      .hud { transition: opacity 0.2s; }
+
+      /* Settings menu. The container ignores clicks so that clicking the empty space around
+         the panel falls through to the canvas and re-locks the pointer; only the panel itself
+         is interactive. */
+      .menu {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        color: #e6e6e6;
+        background: rgba(10, 12, 16, 0.55);
       }
+      .menu.is-hidden { display: none; }
+
+      .menu-panel {
+        pointer-events: auto;
+        width: min(560px, calc(100vw - 48px));
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        padding: 22px 26px;
+        background: rgba(16, 19, 25, 0.97);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+      }
+
+      .menu-header h1 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
+      .menu-status { margin: 6px 0 0; font-size: 12px; }
+      .menu-status[data-state="ok"] { color: #7bd88f; }
+      .menu-status[data-state="warn"] { color: #f7a76a; }
+      .menu-status[data-state="pending"] { color: #9aa4b8; }
+
+      .menu-section { margin-top: 20px; }
+      .menu-section h2 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        opacity: 0.45;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding-bottom: 5px;
+      }
+
+      .menu-field {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 2px 12px;
+        padding: 7px 0;
+      }
+      .menu-field label { grid-column: 1; }
+      .menu-field input { grid-column: 2; }
+      .menu-hint {
+        grid-column: 1 / -1;
+        margin: 2px 0 0;
+        font-size: 11px;
+        line-height: 1.45;
+        opacity: 0.42;
+      }
+
+      .menu-field input[type="number"] {
+        width: 84px;
+        padding: 5px 8px;
+        font: inherit;
+        color: #e6e6e6;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 4px;
+      }
+      .menu-field input[type="checkbox"] { width: 16px; height: 16px; accent-color: #7aa2f7; }
+      .menu-field input:focus-visible { outline: 2px solid #7aa2f7; outline-offset: 1px; }
+
+      .menu-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 22px;
+      }
+      .menu-footer button {
+        padding: 8px 18px;
+        font: inherit;
+        color: #e6e6e6;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .menu-footer button:hover { background: rgba(255, 255, 255, 0.14); }
+      .menu-footer button[data-role="play"] {
+        background: #3b5bbf;
+        border-color: #4c6fd6;
+      }
+      .menu-footer button[data-role="play"]:hover { background: #4c6fd6; }
+
+      .menu-keys { margin: 16px 0 0; font-size: 11px; opacity: 0.4; text-align: center; }
+      .menu-keys b { font-weight: 600; opacity: 0.8; }
     </style>
   </head>
   <body>

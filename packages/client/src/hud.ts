@@ -29,7 +29,6 @@ export function createHud(parent: HTMLElement, spots: readonly MapSpot[]): Hud {
       ${spots.map((s, i) => `<div><b>${i + 1}</b>${s.name}</div>`).join("")}
       <div><b>R</b>respawn</div>
     </div>
-    <div class="hud-hint">click to lock mouse &middot; WASD + space &middot; esc to release</div>
   `;
   parent.appendChild(root);
 
@@ -38,7 +37,6 @@ export function createHud(parent: HTMLElement, spots: readonly MapSpot[]): Hud {
   const posEl = root.querySelector<HTMLElement>(".hud-pos")!;
   const groundEl = root.querySelector<HTMLElement>(".hud-ground")!;
   const fpsEl = root.querySelector<HTMLElement>(".hud-fps")!;
-  const hintEl = root.querySelector<HTMLElement>(".hud-hint")!;
   const canvas = root.querySelector<HTMLCanvasElement>(".hud-graph")!;
   const ctx = canvas.getContext("2d")!;
 
@@ -94,7 +92,8 @@ export function createHud(parent: HTMLElement, spots: readonly MapSpot[]): Hud {
         : "air";
       groundEl.style.color = state.onGround ? "#7bd88f" : "#7aa2f7";
       fpsEl.textContent = fps.toFixed(0);
-      hintEl.style.opacity = locked ? "0" : "1";
+      // Dim the whole readout while the settings menu is up, so it doesn't compete with it.
+      root.style.opacity = locked ? "1" : "0.25";
 
       drawGraph(state.onGround);
     },
