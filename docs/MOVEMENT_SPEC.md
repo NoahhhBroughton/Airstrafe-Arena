@@ -298,7 +298,7 @@ function clipVelocity(vel, normal, overbounce = 1.0):
 | `GROUND_ACCEL` | 10 | |
 | `AIR_ACCEL` | **1000** | Source's `sv_airaccelerate`. See "Air acceleration is not a linear dial" below |
 | `AIR_WISH_SPEED_CAP` | **75** units/s | The real air-control dial. Well above Source's ~30 — see below |
-| `MAX_GROUND_SPEED` | ~320 units/s | CS-like walk/run speed reference |
+| `MAX_GROUND_SPEED` | **250** units/s | Below CS's 320 on purpose — see note below |
 | `FRICTION` | 4 | |
 | `STOP_SPEED` | 100 | Below this, friction stopping power doesn't scale down further |
 | `JUMP_IMPULSE` | **382** | Apex is `impulse^2 / 2g` = 91 units, twice Source's ~45 |
@@ -308,6 +308,12 @@ function clipVelocity(vel, normal, overbounce = 1.0):
 Units above follow Source-convention relative scaling (not meters) — pick a concrete unit system
 early (recommend: 1 unit ≈ 1 inch, matching Source, since most public tuning references use it)
 and keep world geometry scaled consistently to it.
+
+**Running is deliberately slow relative to everything else.** 250 rather than Source's 320,
+which widens the gap between plain running and what the movement tech buys you: a slide launches
+you to 750, and a bhop chain goes well past that. One constraint to remember when touching it —
+it must stay above `SLIDE_MIN_SPEED` (200), or sliding straight out of a run stops working on
+flat ground.
 
 **Unit system: settled.** 1 unit ≈ 1 inch, Y-up (Three.js convention, *not* Source's Z-up — so
 a surface normal's "up" component is `normal.y` here). `JUMP_IMPULSE` 270 against `GRAVITY` 800

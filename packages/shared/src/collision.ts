@@ -43,4 +43,13 @@ export interface CollisionWorld {
    * resting player exactly on the hit/miss boundary where the reported normal is arbitrary.
    */
   castPlayer(from: Vec3, delta: Vec3, hull?: HullOptions): ShapeCastHit | null;
+
+  /**
+   * Cast a thin ray from `from` along `delta` and report the first contact.
+   *
+   * Not used by movement - movement always sweeps the player's hull. This is for everything
+   * that needs a line rather than a volume: keeping the third-person camera out of walls now,
+   * and hitscan in Phase 4.
+   */
+  castRay(from: Vec3, delta: Vec3): ShapeCastHit | null;
 }

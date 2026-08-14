@@ -31,6 +31,7 @@ Then open the printed URL and click the canvas to lock the mouse.
 | `WASD` | move |
 | `Space` | jump — hold it to keep bhopping (auto-bhop is on by default) |
 | `Left Ctrl` | crouch — duck mid-jump for extra height, or land on it at speed to slide |
+| `V` | swap first / third person |
 | `1` / `2` / `3` | teleport to the spawn / bhop staircase / surf platform |
 | `R` | respawn |
 | `Esc` | settings |
@@ -45,6 +46,18 @@ descending slope converts your fall into speed along it, so bhopping downhill co
 
 The HUD's speed graph is the main tuning instrument: the dashed line is `MAX_GROUND_SPEED`, and
 the trace turns blue above it — anything up there came from air strafing.
+
+### Character and weapon
+
+One rig serves both camera modes ([character.ts](packages/client/src/character.ts)) — first
+person just hides the head and puts the camera in it. Two models would drift, and a pose fixed
+in one would stay wrong in the other. `V` swaps between them on the fly.
+
+The instagib laser ([weapon.ts](packages/client/src/weapon.ts)) has no behaviour yet — no firing,
+no hits, that's Phase 4. It exists so movement can be tuned against what the game actually looks
+like from behind the gun, since bob and sway are a large part of how fast movement *feels*. The
+model is re-parented rather than duplicated: camera in first person with its own arms, the
+character's hand in third.
 
 ### Settings
 

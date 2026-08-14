@@ -20,7 +20,8 @@ import {
 import { createRapierWorld, initRapier } from "./rapier-world.js";
 import { createInput } from "./input.js";
 import { buildMapScene } from "./scene.js";
-import { createViewModel } from "./viewmodel.js";
+import { createCharacter } from "./character.js";
+import { createWeapon } from "./weapon.js";
 import { createHud } from "./hud.js";
 import { createSettingsStore, verticalFovDegrees } from "./settings.js";
 import { createSettingsUi } from "./settings-ui.js";
@@ -33,6 +34,9 @@ import { buildActions, spotActionId } from "./keybinds.js";
  * little apparent time; not dropping it locks the tab up.
  */
 const MAX_TICKS_PER_FRAME = 8;
+
+/** How far the third-person camera trails the eye, before wall clearance is applied. */
+const THIRD_PERSON_DISTANCE = 150;
 
 async function main(): Promise<void> {
   const app = document.getElementById("app");
@@ -61,8 +65,19 @@ async function main(): Promise<void> {
 
   const input = createInput(renderer.domElement, settings, map.spawnYaw);
   const hud = createHud(app, map.spots, settings);
-  const viewModel = createViewModel();
-  scene.add(viewModel.object);
+  const character = createCharacter();
+  scene.add(character.object);
+  // The camera has to be in the scene graph for anything parented to it to render.
+  scene.add(camera);
+
+  const weapon = createWeapon();
+
+  let firstPerson = true;
+  const applyViewMode = () => {
+    character.setFirstPerson(firstPerson);
+    weapon.attachTo(firstPerson ? camera : character.rightHand, firstPerson);
+  };
+  applyViewMode();
 
   const menu = createSettingsUi(
     app,
@@ -97,6 +112,11 @@ async function main(): Promise<void> {
   // Edge-triggered actions come from the bind table rather than fixed keys, and only fire
   // while the pointer is locked - see input.onAction.
   input.onAction((actionId) => {
+    if (actionId === "toggleView") {
+      firstPerson = !firstPerson;
+      applyViewMode();
+      return;
+    }
     if (actionId === "respawn") {
       teleport(map.spawn, map.spawnYaw);
       return;
@@ -117,6 +137,8 @@ async function main(): Promise<void> {
   let smoothedFps = 60;
   /** Reused each frame rather than allocated, since this runs every render. */
   const feet = new THREE.Vector3();
+  const eye = new THREE.Vector3();
+  const lookDir = new THREE.Vector3();
 
   function frame(now: number): void {
     requestAnimationFrame(frame);
@@ -163,10 +185,25 @@ async function main(): Promise<void> {
 
     // Body and camera share the same interpolated feet position, so the view can never drift
     // off the model it belongs to.
-    viewModel.update(state, viewDuck, feet, input.yaw);
-    camera.position.set(feet.x, feet.y + eyeHeight(viewDuck), feet.z);
+    character.update(state, viewDuck, feet, input.yaw);
+
+    eye.set(feet.x, feet.y + eyeHeight(viewDuck), feet.z);
     // YXZ order keeps yaw and pitch independent, so the horizon never rolls.
     camera.rotation.set(input.pitch, input.yaw, 0, "YXZ");
+
+    if (firstPerson) {
+      camera.position.copy(eye);
+    } else {
+      // Pull straight back along the view. Raycast the way out and stop short of anything in
+      // the way, or the camera ends up inside walls the moment you back into one.
+      lookDir.set(0, 0, -1).applyEuler(camera.rotation);
+      const back = { x: -lookDir.x * THIRD_PERSON_DISTANCE, y: -lookDir.y * THIRD_PERSON_DISTANCE, z: -lookDir.z * THIRD_PERSON_DISTANCE };
+      const blocked = collision.castRay(eye, back);
+      const reach = blocked ? Math.max(0, blocked.fraction * THIRD_PERSON_DISTANCE - 8) : THIRD_PERSON_DISTANCE;
+      camera.position.set(eye.x - lookDir.x * reach, eye.y - lookDir.y * reach, eye.z - lookDir.z * reach);
+    }
+
+    weapon.update(state, viewDuck, input.yaw, frameDt);
 
     hud.update(state, smoothedFps, input.locked);
     // Unlocked means the menu is up - Esc is the settings key, as in any shooter.

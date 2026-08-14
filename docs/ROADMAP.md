@@ -64,8 +64,19 @@ persistent memory of project progress across sessions.
   instantly. Two earlier versions are recorded in `MOVEMENT_SPEC.md`: accelerating with the air
   cap (became air strafing on the ground) and rate-limited steering off WASD (felt indirect).
   Downhill slides still accelerate from slope gravity. Boost speed is tunable in settings.
-- **First-person body added** (`viewmodel.ts`): blocky legs, pelvis and torso, posed for
-  standing, walking, crouching and sliding. Crouching previously had no visual tell at all.
+- **Full character rig added** (`character.ts`): head, tapered torso, arms and legs in a joint
+  hierarchy, posed for standing, walking, crouching and sliding. Crouching previously had no
+  visual tell at all. One rig serves both camera modes — first person hides the head rather than
+  using a separate model, so the two views can never disagree.
+- **First/third person toggle** (`V`), with the third-person camera raycasting its way back so
+  it does not end up inside walls.
+- **Instagib laser weapon added** (`weapon.ts`), viewmodel only — no firing or hits, which stay
+  in Phase 4. Built early so movement can be tuned against what the game looks like from behind
+  the gun; bob and sway are a large part of how fast movement reads.
+- **`castRay` added to `CollisionWorld`.** Needed by the third-person camera, and it is the same
+  query Phase 4's hitscan will use.
+- **`MAX_GROUND_SPEED` dropped 320 → 250**, widening the gap between running and the movement
+  tech. It has to stay above `SLIDE_MIN_SPEED` (200) or sliding out of a run stops working.
 - **Air-crouch now visibly moves the camera.** The hull change and the eye-offset change cancel
   exactly, so the view used to stay perfectly still; the camera's duck now eases behind the
   hull's, which makes the pop visible. Cosmetic, render-time only.
@@ -100,9 +111,14 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
 - `AIR_WISH_SPEED_CAP` is now 75. It is the knob to reach for if strafing still doesn't feel
   right — acceleration is saturated, so this is the only thing that changes air control.
 - Verify the sensitivity match with a 360° test against CS rather than trusting it on paper.
-- The first-person body is greybox: flat-coloured boxes, no arms, no textures. Arms belong with
-  the weapon in Phase 4. Curved/tapered limbs were raised as an idea and would need bones or
-  skinning rather than nested boxes — deferred until there is a third-person model to match.
+- The character is greybox: flat-shaded procedural geometry, no textures, no authored animation.
+  Limbs are *tapered segments with a rounded cap at each joint*, which is what keeps a bend from
+  showing the corner of one segment poking out of the other. That cap is standing in for what a
+  skinned mesh would do — real skinning deforms the surface across the joint instead, and wants
+  an authored, weighted model (glTF) rather than procedural boxes and cylinders. That is an asset
+  pipeline decision, and Phase 2 already plans glTF loading for maps; worth doing both at once.
+- Weapon is a viewmodel only. Firing, hit registration and any recoil or fire animation are
+  Phase 4.
 
 ## Phase 2 — Test content
 - [ ] A few more surf ramps at different angles
@@ -122,11 +138,10 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
   other move smoothly with no visible rubber-banding under normal conditions.
 
 ## Phase 4 — Instagib combat
-- [ ] **Laser weapon viewmodel** — requested during Phase 1 as an eventual want. Deferred here
-      deliberately: a weapon model is only worth building against real fire/hit behaviour, and
-      the first-person body added in Phase 1 (`packages/client/src/viewmodel.ts`) is where arms
-      and a weapon would attach when the time comes.
-- [ ] Hitscan raycast on fire input
+- [x] Laser weapon *model* — built during Phase 1 so movement could be tuned with it in view.
+      See `packages/client/src/weapon.ts`. Everything it does is cosmetic.
+- [ ] Hitscan raycast on fire input — `CollisionWorld.castRay` already exists, added for the
+      third-person camera
 - [ ] Server-side lag-compensated hit registration per ARCHITECTURE.md
 - [ ] One-shot kill, respawn
 - [ ] Simple weapon: instant-hit only, no projectile, no falloff (true instagib)

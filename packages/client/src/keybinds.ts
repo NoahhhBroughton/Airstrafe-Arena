@@ -29,6 +29,7 @@ export const CORE_ACTIONS: readonly ActionDef[] = [
   { id: "moveRight", label: "Strafe right", group: "Move" },
   { id: "jump", label: "Jump", group: "Move" },
   { id: "crouch", label: "Crouch", group: "Move" },
+  { id: "toggleView", label: "First / third person", group: "Debug" },
   { id: "respawn", label: "Respawn", group: "Debug" },
 ];
 
@@ -56,6 +57,7 @@ export function defaultBinds(spots: readonly MapSpot[]): Binds {
     // a preference, not a default - an unasked-for wheel bind means every stray scroll jumps.
     jump: ["Space", null],
     crouch: ["ControlLeft", null],
+    toggleView: ["KeyV", null],
     respawn: ["KeyR", null],
   };
   spots.forEach((_, i) => {

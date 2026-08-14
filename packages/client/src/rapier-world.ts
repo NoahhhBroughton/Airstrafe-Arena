@@ -118,5 +118,21 @@ export function createRapierWorld(map: MapDef): CollisionWorld {
 
       return { fraction: Math.min(Math.max(hit.time_of_impact, 0), 1), normal };
     },
+
+    castRay(from: Vec3, delta: Vec3): ShapeCastHit | null {
+      const length = vec3.length(delta);
+      if (length < 1e-9) return null;
+
+      const ray = new RAPIER.Ray(from, vec3.scale(delta, 1 / length));
+      // solid=true so a ray starting inside geometry reports immediately rather than passing
+      // out through the far side.
+      const hit = world.castRayAndGetNormal(ray, length, true);
+      if (!hit) return null;
+
+      return {
+        fraction: Math.min(Math.max(hit.timeOfImpact / length, 0), 1),
+        normal: vec3.normalize(hit.normal),
+      };
+    },
   };
 }

@@ -27,6 +27,12 @@ import {
   TICK_DT,
 } from "./constants.js";
 
+/**
+ * Movement only ever sweeps the player's hull; castRay exists for the third-person camera and
+ * Phase 4 hitscan. Test worlds therefore stub it rather than implementing it.
+ */
+const NO_RAYS = { castRay: () => null };
+
 // A single infinite plane through the origin, tilted by `angleDeg` about +Z. Enough to test
 // every ground/air/surf decision without pulling in Rapier - which is the point of movement
 // taking a CollisionWorld rather than a physics engine.
@@ -34,6 +40,7 @@ function tiltedPlane(angleDeg: number): CollisionWorld {
   const a = (angleDeg * Math.PI) / 180;
   const normal: Vec3 = { x: -Math.sin(a), y: Math.cos(a), z: 0 };
   return {
+    ...NO_RAYS,
     castPlayer(from: Vec3, delta: Vec3) {
       const dist = vec3.dot(from, normal);
       const approach = vec3.dot(delta, normal);
@@ -48,7 +55,7 @@ function tiltedPlane(angleDeg: number): CollisionWorld {
 const flatGround = (): CollisionWorld => tiltedPlane(0);
 
 /** Empty world - every cast misses, so the player is always airborne. */
-const emptyWorld: CollisionWorld = { castPlayer: () => null };
+const emptyWorld: CollisionWorld = { ...NO_RAYS, castPlayer: () => null };
 
 function input(overrides: Partial<PlayerInput> = {}): PlayerInput {
   return { forward: 0, right: 0, jump: false, crouch: false, yaw: 0, ...overrides };
@@ -443,6 +450,7 @@ test("air control still applies while surfing - the ramp is not a special mode",
 test("the ground probe starts clear of the feet and uses a narrowed shape", () => {
   const calls: { from: Vec3; delta: Vec3; shrink: number | undefined }[] = [];
   const spy: CollisionWorld = {
+    ...NO_RAYS,
     castPlayer(from, delta, hull) {
       calls.push({ from, delta, shrink: hull?.shrink });
       return null;
@@ -469,6 +477,7 @@ test("standing on a floor while pressed against a wall stays grounded", () => {
   const floor: Vec3 = { x: 0, y: 1, z: 0 };
   const corner: Vec3 = vec3.normalize({ x: 0, y: 1, z: 1 });
   const world: CollisionWorld = {
+    ...NO_RAYS,
     castPlayer(_from, delta, hull) {
       if (delta.y >= 0) return null;
       return { fraction: 0.5, normal: (hull?.shrink ?? 0) > 0 ? floor : corner };
@@ -483,6 +492,7 @@ test("standing on a floor while pressed against a wall stays grounded", () => {
 /** Floor at y = 0 with a ceiling overhead, to exercise downward-facing contact normals. */
 function room(ceilingHeight: number): CollisionWorld {
   return {
+    ...NO_RAYS,
     castPlayer(from: Vec3, delta: Vec3, hull) {
       if (delta.y < 0) {
         const dist = from.y;

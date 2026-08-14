@@ -32,7 +32,13 @@ export const AIR_ACCEL = 1000;
  * character for a much more forgiving strafe.
  */
 export const AIR_WISH_SPEED_CAP = 75;
-export const MAX_GROUND_SPEED = 320;
+/**
+ * Ground running speed. Below Source's 320 deliberately, to widen the gap between running and
+ * everything the movement tech gives you - a slide launches you to three times this, and a bhop
+ * chain well past that. Note it still clears SLIDE_MIN_SPEED (200), so sliding straight out of a
+ * run works; drop it below that and the slide becomes unreachable on flat ground.
+ */
+export const MAX_GROUND_SPEED = 250;
 export const FRICTION = 4;
 export const STOP_SPEED = 100;
 /**
