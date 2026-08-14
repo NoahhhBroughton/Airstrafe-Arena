@@ -38,8 +38,8 @@ Then open the printed URL and click the canvas to lock the mouse.
 All of these are rebindable — see below.
 
 **Movement tech.** Beyond bhop and surf: **crouch-jump** (duck mid-jump to clear 18 more units),
-**slide** (crouch while moving fast — it's air strafing on the ground, holding your speed for
-2 seconds before falling off, and accelerating downhill), and **ramp slide** (landing on a
+**slide** (crouch while moving fast — it launches you to 750 u/s, holds that for 2 seconds before
+falling off, air-strafes on the ground, and accelerates downhill), and **ramp slide** (landing on a
 descending slope converts your fall into speed along it, so bhopping downhill compounds).
 
 The HUD's speed graph is the main tuning instrument: the dashed line is `MAX_GROUND_SPEED`, and

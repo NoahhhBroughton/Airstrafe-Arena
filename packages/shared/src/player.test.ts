@@ -20,6 +20,7 @@ import {
   MAX_GROUND_SPEED,
   PLAYER_DUCK_HEIGHT,
   PLAYER_HEIGHT,
+  SLIDE_BOOST_SPEED,
   SLIDE_GRACE_TIME,
   SLIDE_MIN_SPEED,
   SKIN_WIDTH,
@@ -737,8 +738,32 @@ test("pressing crouch while running starts a slide", () => {
   assert.equal(state.onGround, true);
   assert.ok(vec3.horizontalLength(state.velocity) >= SLIDE_MIN_SPEED);
 
+  const runSpeed = vec3.horizontalLength(state.velocity);
   state = movePlayer(state, input({ forward: 1, crouch: true }), world, TICK_DT);
   assert.equal(state.sliding, true, "crouch while running should slide");
+
+  // Entering the slide launches you well past run speed - that boost is the reward for
+  // sliding, and the reason to do it rather than keep running.
+  const boosted = vec3.horizontalLength(state.velocity);
+  assert.ok(
+    Math.abs(boosted - SLIDE_BOOST_SPEED) < 1e-6,
+    `slide entry did not boost: ${runSpeed} -> ${boosted}, expected ${SLIDE_BOOST_SPEED}`,
+  );
+});
+
+test("the slide boost is a floor, so a fast entry is not clamped down to it", () => {
+  const world = flatGround();
+  let state: PlayerState = {
+    ...createPlayerState({ x: 0, y: 60, z: 0 }),
+    velocity: { x: 0, y: 0, z: -(SLIDE_BOOST_SPEED + 400) },
+  };
+  while (!state.onGround) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+
+  assert.equal(state.sliding, true);
+  assert.ok(
+    vec3.horizontalLength(state.velocity) > SLIDE_BOOST_SPEED + 300,
+    `a fast entry was clamped to the boost speed: ${vec3.horizontalLength(state.velocity)}`,
+  );
 });
 
 test("crouching too slowly to slide just crouches", () => {

@@ -122,6 +122,7 @@ async function main(): Promise<void> {
       airAccel: s.airAccel,
       airWishSpeedCap: s.airWishSpeedCap,
       slide: s.slide,
+      slideBoostSpeed: s.slideBoostSpeed,
     };
 
     accumulator += frameDt;

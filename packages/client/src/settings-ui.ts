@@ -118,6 +118,13 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
         label: "Slide",
         hint: "Crouch while moving fast to slide instead of stopping. Downhill slides accelerate.",
       },
+      {
+        kind: "number",
+        key: "slideBoostSpeed",
+        label: "Slide boost",
+        step: 25,
+        hint: "Speed a slide launches you to. A floor, not a cap — entering faster keeps what you arrived with.",
+      },
     ],
   },
 ];

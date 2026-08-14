@@ -37,6 +37,7 @@ import {
   PLAYER_EYE_HEIGHT,
   PLAYER_HEIGHT,
   SKIN_WIDTH,
+  SLIDE_BOOST_SPEED,
   SLIDE_ENABLED,
   SLIDE_END_SPEED,
   SLIDE_FRICTION,
@@ -96,6 +97,7 @@ export interface MoveOptions {
   airAccel?: number;
   airWishSpeedCap?: number;
   slide?: boolean;
+  slideBoostSpeed?: number;
 }
 
 export function createPlayerState(position: Vec3): PlayerState {
@@ -561,14 +563,19 @@ export function movePlayer(
   //    Entry (SLIDE_MIN_SPEED) sits well above exit (SLIDE_END_SPEED) on purpose. That gap is
   //    what stops a spent slide restarting itself: once it gives out, crouch-walking is capped
   //    by DUCK_SPEED_SCALE far below the speed needed to slide again.
-  if (
-    slideAllowed &&
-    input.crouch &&
-    !jumped &&
-    landed &&
-    vec3.horizontalLength(velocity) >= SLIDE_MIN_SPEED
-  ) {
+  const entrySpeed = vec3.horizontalLength(velocity);
+  if (!sliding && slideAllowed && input.crouch && !jumped && landed && entrySpeed >= SLIDE_MIN_SPEED) {
     sliding = true;
+    slideTime = 0;
+
+    // The entry boost. A floor rather than a multiplier, so a slide out of a run always lands
+    // on the same speed and is worth doing, while a faster entry keeps what it arrived with
+    // instead of being clamped down.
+    const boost = options.slideBoostSpeed ?? SLIDE_BOOST_SPEED;
+    if (entrySpeed > EPSILON && entrySpeed < boost) {
+      const scale = boost / entrySpeed;
+      velocity = { x: velocity.x * scale, y: velocity.y, z: velocity.z * scale };
+    }
   }
   sliding = sliding && landed;
   if (!sliding) slideTime = 0;

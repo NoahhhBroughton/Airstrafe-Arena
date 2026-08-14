@@ -58,9 +58,10 @@ persistent memory of project progress across sessions.
 - **Lurch built, then removed.** Edge-triggering it on a strafe press was wrong: air strafing
   alternates A and D, so every strafe cycle fired one. Written up in `MOVEMENT_SPEC.md` — the
   general point is that no trigger on the strafe keys can coexist with air strafing.
-- **Slide** added: crouch while moving fast (from a run or through a landing). It uses
-  `airAccelerate`, so strafing builds speed on the ground the same way it does mid-air; speed is
-  untouched for 2 seconds, then falls off. Downhill slides accelerate.
+- **Slide** added: crouch while moving fast (from a run or through a landing) launches you to
+  `SLIDE_BOOST_SPEED` (750). It uses `airAccelerate`, so strafing builds speed on the ground the
+  same way it does mid-air; speed is untouched for 2 seconds, then falls off. Downhill slides
+  accelerate. Boost speed is tunable in the settings screen.
 
 ### Scope added during Phase 1 (not in the original plan)
 - Settings screen with live movement tuning, Source-1:1 sensitivity, raw input, FOV.

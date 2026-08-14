@@ -180,9 +180,15 @@ crouch already held.
 | Constant | Value | Notes |
 |---|---|---|
 | `SLIDE_MIN_SPEED` | 200 | Entry threshold |
+| `SLIDE_BOOST_SPEED` | 750 | Speed a slide launches you to on entry |
 | `SLIDE_END_SPEED` | 120 | Below this the slide gives out |
 | `SLIDE_GRACE_TIME` | 2s | Speed is untouched for this long before falloff begins |
 | `SLIDE_FRICTION` | 0.35 | Applied only after the grace window; against `FRICTION` 4 |
+
+**Entering a slide boosts you to `SLIDE_BOOST_SPEED`**, well over `MAX_GROUND_SPEED` (320). That
+jump is the reward for sliding and the reason to slide out of a run rather than keep running. It
+is applied as a *floor, never a cap*: entering already faster — off a bhop chain, say — keeps
+whatever speed you arrived with instead of being clamped down to it.
 
 **A slide is air strafing brought down to the ground.** It accelerates with `airAccelerate` and
 the same low airborne wishSpeed cap, not `groundAccelerate` — so pointing the mouse across your
@@ -202,10 +208,16 @@ Two more details that carry the feel:
    winning at any slide speed under about 780.
 2. **Entry threshold sits well above the exit threshold** (200 against 120), and that gap is
    load-bearing. Without it, a spent slide would restart itself on the next tick while crouch is
-   still held, flickering in and out. With it, a finished slide leaves you crouch-walking, which
-   `DUCK_SPEED_SCALE` caps at ~107 — far below the speed needed to slide again. Entry is
-   evaluated after the move, since it depends on where the player ended up and how fast they are
-   actually going once collisions have resolved.
+   still held — re-triggering the boost every tick and flickering in and out. With it, a
+   finished slide leaves you crouch-walking, which `DUCK_SPEED_SCALE` caps at ~107, far below
+   the speed needed to slide again. Entry is evaluated after the move, since it depends on where
+   the player ended up and how fast they are actually going once collisions have resolved.
+
+**Known interaction to watch in playtest:** a slide is cleared while airborne, so bouncing over
+a bump mid-slide ends it and the landing re-enters — re-applying the boost and resetting the
+grace timer. Harmless while you are above the boost speed (it is a floor), but on bumpy ground
+after the grace window it could be used to refresh a slide indefinitely. Left as-is pending
+playtest rather than papered over.
 
 ## Crouch
 

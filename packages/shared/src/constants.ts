@@ -107,6 +107,15 @@ export const SLIDE_MIN_SPEED = 200;
 export const SLIDE_END_SPEED = 120;
 
 /**
+ * Speed a slide launches you to on entry. Well over MAX_GROUND_SPEED (320) - that jump is the
+ * reward for sliding, and the reason to slide out of a run rather than just keep running.
+ *
+ * Applied as a floor, never a ceiling: entering a slide already faster than this (off a bhop
+ * chain, say) keeps whatever speed you arrived with rather than being clamped down to it.
+ */
+export const SLIDE_BOOST_SPEED = 750;
+
+/**
  * Seconds a slide holds its speed before friction starts eating it. Inside this window a slide
  * is free: the only thing changing your speed is the slope and your own strafing.
  */
