@@ -22,6 +22,7 @@ import { buildMapScene } from "./scene.js";
 import { createHud } from "./hud.js";
 import { createSettingsStore, verticalFovDegrees } from "./settings.js";
 import { createSettingsUi } from "./settings-ui.js";
+import { buildActions, spotActionId } from "./keybinds.js";
 
 /**
  * Ticks we're willing to run in one frame before giving up on catching up. Without this, a
@@ -41,7 +42,8 @@ async function main(): Promise<void> {
   const collision = createRapierWorld(map);
   const scene = buildMapScene(map);
 
-  const settings = createSettingsStore();
+  const actions = buildActions(map.spots);
+  const settings = createSettingsStore(actions, map.spots);
 
   const camera = new THREE.PerspectiveCamera(
     verticalFovDegrees(settings.current.fov),
@@ -56,8 +58,14 @@ async function main(): Promise<void> {
   app.appendChild(renderer.domElement);
 
   const input = createInput(renderer.domElement, settings, map.spawnYaw);
-  const hud = createHud(app, map.spots);
-  const menu = createSettingsUi(app, settings, () => input.requestLock());
+  const hud = createHud(app, map.spots, settings);
+  const menu = createSettingsUi(
+    app,
+    settings,
+    actions,
+    () => input.requestLock(),
+    (capturing) => input.setSuspended(capturing),
+  );
 
   settings.subscribe((current) => {
     camera.fov = verticalFovDegrees(current.fov);
@@ -75,19 +83,16 @@ async function main(): Promise<void> {
     input.setYaw(yaw);
   };
 
-  window.addEventListener("keydown", (e) => {
-    // Typing "2" into a settings field should not teleport you to the bhop course.
-    if (e.target instanceof HTMLInputElement) return;
-    if (e.code === "KeyR") {
+  // Edge-triggered actions come from the bind table rather than fixed keys, and only fire
+  // while the pointer is locked - see input.onAction.
+  input.onAction((actionId) => {
+    if (actionId === "respawn") {
       teleport(map.spawn, map.spawnYaw);
       return;
     }
-    // Digit1..DigitN jump to the map's named test spots - see MapSpot.
-    const match = /^Digit([1-9])$/.exec(e.code);
-    if (match?.[1]) {
-      const spot = map.spots[Number(match[1]) - 1];
-      if (spot) teleport(spot.position, spot.yaw);
-    }
+    const index = map.spots.findIndex((_, i) => spotActionId(i) === actionId);
+    const spot = index >= 0 ? map.spots[index] : undefined;
+    if (spot) teleport(spot.position, spot.yaw);
   });
 
   window.addEventListener("resize", () => {

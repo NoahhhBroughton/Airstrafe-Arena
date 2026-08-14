@@ -6,7 +6,8 @@
 // authority for them to the server - a client choosing its own air acceleration is a client
 // that outruns everyone else.
 
-import { AIR_ACCEL, AIR_WISH_SPEED_CAP, AUTO_BHOP_ENABLED } from "@airstrafe-arena/shared";
+import { AIR_ACCEL, AIR_WISH_SPEED_CAP, AUTO_BHOP_ENABLED, type MapSpot } from "@airstrafe-arena/shared";
+import { defaultBinds, reconcileBinds, type ActionDef, type Binds } from "./keybinds.js";
 
 export interface Settings {
   /**
@@ -30,9 +31,12 @@ export interface Settings {
   autoBhop: boolean;
   airAccel: number;
   airWishSpeedCap: number;
+
+  binds: Binds;
 }
 
-export const DEFAULT_SETTINGS: Settings = {
+/** Scalar defaults. Binds depend on the loaded map's spots, so they're filled in per-store. */
+export const DEFAULT_SETTINGS: Omit<Settings, "binds"> = {
   sensitivity: 1,
   mYaw: 0.022,
   rawInput: true,
@@ -69,12 +73,12 @@ function clampNumber(key: string, value: number, fallback: number): number {
  * out of range falls back - so a settings file from an older build, or one hand-edited into
  * nonsense, degrades to a working game rather than an unbootable one.
  */
-function coerce(raw: unknown): Settings {
-  if (typeof raw !== "object" || raw === null) return { ...DEFAULT_SETTINGS };
-  const source = raw as Record<string, unknown>;
-  const result = { ...DEFAULT_SETTINGS };
+function coerce(raw: unknown, defaults: Settings, actions: readonly ActionDef[]): Settings {
+  const source =
+    typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const result: Settings = { ...defaults, binds: { ...defaults.binds } };
 
-  for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
+  for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Omit<Settings, "binds">)[]) {
     const value = source[key];
     const fallback = DEFAULT_SETTINGS[key];
     if (typeof fallback === "boolean") {
@@ -83,6 +87,8 @@ function coerce(raw: unknown): Settings {
       result[key] = clampNumber(key, value, fallback) as never;
     }
   }
+
+  result.binds = reconcileBinds(source["binds"], actions, defaults.binds);
   return result;
 }
 
@@ -93,14 +99,19 @@ export interface SettingsStore {
   subscribe(listener: (settings: Readonly<Settings>) => void): void;
 }
 
-export function createSettingsStore(): SettingsStore {
+export function createSettingsStore(
+  actions: readonly ActionDef[],
+  spots: readonly MapSpot[],
+): SettingsStore {
+  const defaults: Settings = { ...DEFAULT_SETTINGS, binds: defaultBinds(spots) };
+
   let settings: Settings;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    settings = stored ? coerce(JSON.parse(stored)) : { ...DEFAULT_SETTINGS };
+    settings = coerce(stored ? JSON.parse(stored) : {}, defaults, actions);
   } catch {
     // Private browsing, disabled storage, or corrupt JSON. None of these should stop the game.
-    settings = { ...DEFAULT_SETTINGS };
+    settings = { ...defaults };
   }
 
   const listeners: ((settings: Readonly<Settings>) => void)[] = [];
@@ -120,13 +131,16 @@ export function createSettingsStore(): SettingsStore {
     },
 
     set(key, value) {
-      const next = typeof value === "number" ? clampNumber(key, value, DEFAULT_SETTINGS[key] as number) : value;
+      const next =
+        typeof value === "number"
+          ? clampNumber(key, value, (DEFAULT_SETTINGS as Record<string, unknown>)[key] as number)
+          : value;
       settings = { ...settings, [key]: next };
       persist();
     },
 
     reset() {
-      settings = { ...DEFAULT_SETTINGS };
+      settings = { ...defaults, binds: defaultBinds(spots) };
       persist();
     },
 

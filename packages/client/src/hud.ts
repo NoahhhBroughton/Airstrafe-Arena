@@ -3,6 +3,8 @@
 // bhop chain is gaining or bleeding speed in a way a single number never does.
 
 import { vec3, MAX_GROUND_SPEED, type MapSpot, type PlayerState } from "@airstrafe-arena/shared";
+import { describeToken, spotActionId } from "./keybinds.js";
+import type { SettingsStore } from "./settings.js";
 
 const HISTORY_LENGTH = 240; // about 4 seconds at 60fps
 
@@ -10,7 +12,11 @@ export interface Hud {
   update(state: PlayerState, fps: number, locked: boolean): void;
 }
 
-export function createHud(parent: HTMLElement, spots: readonly MapSpot[]): Hud {
+export function createHud(
+  parent: HTMLElement,
+  spots: readonly MapSpot[],
+  settings: SettingsStore,
+): Hud {
   const root = document.createElement("div");
   root.className = "hud";
   root.innerHTML = `
@@ -25,10 +31,7 @@ export function createHud(parent: HTMLElement, spots: readonly MapSpot[]): Hud {
       </dl>
     </div>
     <div class="hud-center"></div>
-    <div class="hud-spots">
-      ${spots.map((s, i) => `<div><b>${i + 1}</b>${s.name}</div>`).join("")}
-      <div><b>R</b>respawn</div>
-    </div>
+    <div class="hud-spots" data-role="spots"></div>
   `;
   parent.appendChild(root);
 
@@ -39,6 +42,29 @@ export function createHud(parent: HTMLElement, spots: readonly MapSpot[]): Hud {
   const fpsEl = root.querySelector<HTMLElement>(".hud-fps")!;
   const canvas = root.querySelector<HTMLCanvasElement>(".hud-graph")!;
   const ctx = canvas.getContext("2d")!;
+  const spotsEl = root.querySelector<HTMLElement>('[data-role="spots"]')!;
+
+  // Rebuilt whenever binds change, so the shortcut list can never disagree with what the keys
+  // actually do.
+  const renderSpots = () => {
+    const rows = spots.map((spot, i) => ({
+      key: settings.current.binds[spotActionId(i)]?.[0] ?? null,
+      label: spot.name,
+    }));
+    rows.push({ key: settings.current.binds["respawn"]?.[0] ?? null, label: "respawn" });
+
+    spotsEl.replaceChildren(
+      ...rows.map((row) => {
+        const div = document.createElement("div");
+        const key = document.createElement("b");
+        key.textContent = describeToken(row.key);
+        div.append(key, document.createTextNode(row.label));
+        return div;
+      }),
+    );
+  };
+  settings.subscribe(renderSpots);
+  renderSpots();
 
   const history: number[] = [];
   // Graph scale is generous headroom over walk speed, since the whole point is watching speed

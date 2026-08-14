@@ -29,10 +29,12 @@ Then open the printed URL and click the canvas to lock the mouse.
 | Key | |
 |---|---|
 | `WASD` | move |
-| `Space` | jump — hold it to keep bhopping (auto-bhop is on by default) |
+| `Space` / `Wheel Down` | jump — hold space to keep bhopping (auto-bhop is on by default) |
 | `1` / `2` / `3` | teleport to the spawn / bhop staircase / surf platform |
 | `R` | respawn |
 | `Esc` | settings |
+
+All of these are rebindable — see below.
 
 The HUD's speed graph is the main tuning instrument: the dashed line is `MAX_GROUND_SPEED`, and
 the trace turns blue above it — anything up there came from air strafing.
@@ -48,6 +50,17 @@ whatever number you use in CS transfers directly. That parity depends on raw inp
 asks the browser for unadjusted pointer movement to bypass the OS acceleration curve, and the
 settings screen tells you whether it got it. FOV is likewise quoted the Source way: horizontal
 at 4:3, widening on wider displays.
+
+### Keybinds
+
+Every action has a **primary and a secondary** slot, so jump can live on both `Space` and
+`Wheel Down` at once — hold one for chains, flick the other for timing. Keyboard keys, mouse
+buttons and wheel notches are all bindable; a wheel notch registers as exactly one tick of
+input, which is what makes wheel-jump work.
+
+Click a slot, then press what you want. `Delete` clears it, `Esc` cancels. Binding something
+that's already in use **takes it from wherever it was** and tells you what it removed, rather
+than leaving two actions fighting over one key.
 
 ## Test
 

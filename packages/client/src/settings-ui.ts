@@ -5,6 +5,22 @@
 // no reload. That is the whole reason this exists rather than a constants file you edit.
 
 import type { Settings, SettingsStore } from "./settings.js";
+import {
+  assignBind,
+  clearBind,
+  describeToken,
+  tokenFromKeyboard,
+  tokenFromMouse,
+  tokenFromWheel,
+  type ActionDef,
+} from "./keybinds.js";
+
+const escapeHtml = (value: string): string =>
+  value.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c,
+  );
 
 interface FieldBase {
   key: keyof Settings;
@@ -62,7 +78,7 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
     ],
   },
   {
-    title: "Movement",
+    title: "Movement tuning",
     fields: [
       {
         kind: "toggle",
@@ -75,14 +91,14 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
         key: "airAccel",
         label: "Air accelerate",
         step: 10,
-        hint: "Source's sv_airaccelerate. Above 64 (1/tick) this saturates — 100 and 1000 are the same.",
+        hint: "Source's sv_airaccelerate. Saturates above 64 (1/tick), so anything from ~100 up behaves identically — below that it bites.",
       },
       {
         kind: "number",
         key: "airWishSpeedCap",
         label: "Air wish speed",
         step: 1,
-        hint: "The real air-control dial. Low values are what make strafing compound speed.",
+        hint: "The real air-control dial. Higher forgives sloppier strafing and builds speed faster; Source's ~30 demands tighter mouse timing.",
       },
     ],
   },
@@ -94,10 +110,42 @@ export interface SettingsUi {
   setRawInputActive(active: boolean): void;
 }
 
+/** Grouped bind rows, two slots each. Group order follows first appearance in `actions`. */
+function controlsHtml(actions: readonly ActionDef[]): string {
+  const groups = new Map<string, ActionDef[]>();
+  for (const action of actions) {
+    const list = groups.get(action.group);
+    if (list) list.push(action);
+    else groups.set(action.group, [action]);
+  }
+
+  return [...groups]
+    .map(
+      ([group, list]) => `
+      <section class="menu-section">
+        <h2>${escapeHtml(group)}</h2>
+        <div class="bind-head"><span></span><span>Primary</span><span>Secondary</span></div>
+        ${list
+          .map(
+            (action) => `
+          <div class="bind-row">
+            <span class="bind-label">${escapeHtml(action.label)}</span>
+            <button type="button" class="bind-slot" data-action="${escapeHtml(action.id)}" data-slot="0"></button>
+            <button type="button" class="bind-slot" data-action="${escapeHtml(action.id)}" data-slot="1"></button>
+          </div>`,
+          )
+          .join("")}
+      </section>`,
+    )
+    .join("");
+}
+
 export function createSettingsUi(
   parent: HTMLElement,
   settings: SettingsStore,
+  actions: readonly ActionDef[],
   onPlay: () => void,
+  onCaptureChange: (capturing: boolean) => void,
 ): SettingsUi {
   const root = document.createElement("div");
   root.className = "menu";
@@ -130,32 +178,147 @@ export function createSettingsUi(
         <p class="menu-status" data-role="raw-status"></p>
       </header>
       ${sectionsHtml}
+      <h2 class="menu-controls-title">Controls</h2>
+      <p class="menu-hint menu-controls-hint">
+        Click a slot, then press any key, mouse button or wheel notch.
+        <b>Delete</b> clears it, <b>Esc</b> cancels.
+      </p>
+      <p class="menu-bind-notice" data-role="bind-notice"></p>
+      ${controlsHtml(actions)}
       <footer class="menu-footer">
         <button type="button" data-role="reset">Reset to defaults</button>
         <button type="button" data-role="play">Play</button>
       </footer>
-      <p class="menu-keys">
-        <b>WASD</b> move &middot; <b>Space</b> jump &middot; <b>1</b>/<b>2</b>/<b>3</b> teleport
-        &middot; <b>R</b> respawn &middot; <b>Esc</b> settings
-      </p>
     </div>
   `;
   parent.appendChild(root);
 
   const rawStatus = root.querySelector<HTMLElement>('[data-role="raw-status"]')!;
+  const bindNotice = root.querySelector<HTMLElement>('[data-role="bind-notice"]')!;
   const inputs = Array.from(root.querySelectorAll<HTMLInputElement>("input[data-key]"));
+  const bindSlots = Array.from(root.querySelectorAll<HTMLButtonElement>(".bind-slot"));
+
+  const labelFor = (actionId: string): string =>
+    actions.find((a) => a.id === actionId)?.label ?? actionId;
+
+  /** The slot currently waiting for a key, if any. */
+  let capturing: { actionId: string; slot: number; button: HTMLButtonElement } | null = null;
 
   const render = (current: Readonly<Settings>) => {
     for (const input of inputs) {
       const key = input.dataset.key as keyof Settings | undefined;
-      if (!key) continue;
+      if (!key || key === "binds") continue;
       const value = current[key];
       // Skip the field being typed in, or the cursor jumps to the end on every keystroke.
       if (document.activeElement === input) continue;
       if (typeof value === "boolean") input.checked = value;
       else input.value = String(value);
     }
+
+    for (const button of bindSlots) {
+      const actionId = button.dataset.action;
+      const slot = Number(button.dataset.slot);
+      if (!actionId || !Number.isInteger(slot)) continue;
+      const isCapturing = capturing?.actionId === actionId && capturing.slot === slot;
+      button.classList.toggle("is-capturing", isCapturing);
+      button.textContent = isCapturing
+        ? "Press any key…"
+        : describeToken(current.binds[actionId]?.[slot] ?? null);
+    }
   };
+
+  const notify = (message: string, kind: "info" | "warn") => {
+    bindNotice.textContent = message;
+    bindNotice.dataset.state = message ? kind : "";
+  };
+
+  const stopCapture = () => {
+    if (!capturing) return;
+    capturing = null;
+    onCaptureChange(false);
+    render(settings.current);
+  };
+
+  const commit = (token: string) => {
+    if (!capturing) return;
+    const { actionId, slot } = capturing;
+    const { binds, cleared } = assignBind(settings.current.binds, actionId, slot, token);
+    settings.set("binds", binds);
+
+    if (cleared.length > 0) {
+      // Rebinding steals the token rather than duplicating it. Say so explicitly - silently
+      // removing someone's jump key because they reused the button is how a game earns a
+      // reputation for being broken.
+      const names = cleared
+        .map((c) => `${labelFor(c.actionId)} (${c.slot === 0 ? "primary" : "secondary"})`)
+        .join(", ");
+      notify(`${describeToken(token)} was already bound — unbound it from ${names}.`, "warn");
+    } else {
+      notify(`Bound ${describeToken(token)} to ${labelFor(actionId)}.`, "info");
+    }
+    stopCapture();
+  };
+
+  // Capture phase, on window, so a keypress meant for a bind never reaches the game or the
+  // browser's own shortcuts on the way.
+  const captureKey = (e: KeyboardEvent) => {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.code === "Escape") {
+      notify("Rebind cancelled.", "info");
+      stopCapture();
+      return;
+    }
+    if (e.code === "Delete" || e.code === "Backspace") {
+      const { actionId, slot } = capturing;
+      settings.set("binds", clearBind(settings.current.binds, actionId, slot));
+      notify(`Cleared ${labelFor(actionId)} (${slot === 0 ? "primary" : "secondary"}).`, "info");
+      stopCapture();
+      return;
+    }
+    commit(tokenFromKeyboard(e));
+  };
+
+  const captureMouse = (e: MouseEvent) => {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    commit(tokenFromMouse(e));
+  };
+
+  const captureWheel = (e: WheelEvent) => {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const token = tokenFromWheel(e);
+    if (token) commit(token);
+  };
+
+  const captureContextMenu = (e: MouseEvent) => {
+    if (capturing) e.preventDefault();
+  };
+
+  window.addEventListener("keydown", captureKey, { capture: true });
+  window.addEventListener("mousedown", captureMouse, { capture: true });
+  window.addEventListener("wheel", captureWheel, { capture: true, passive: false });
+  window.addEventListener("contextmenu", captureContextMenu, { capture: true });
+
+  for (const button of bindSlots) {
+    button.addEventListener("click", () => {
+      const actionId = button.dataset.action;
+      const slot = Number(button.dataset.slot);
+      if (!actionId || !Number.isInteger(slot)) return;
+      if (capturing?.button === button) {
+        stopCapture();
+        return;
+      }
+      capturing = { actionId, slot, button };
+      notify("", "info");
+      onCaptureChange(true);
+      render(settings.current);
+    });
+  }
 
   for (const input of inputs) {
     input.addEventListener("input", () => {
@@ -174,7 +337,9 @@ export function createSettingsUi(
   }
 
   root.querySelector('[data-role="reset"]')?.addEventListener("click", () => {
+    stopCapture();
     settings.reset();
+    notify("Reset to defaults, including keybinds.", "info");
     render(settings.current);
   });
   root.querySelector('[data-role="play"]')?.addEventListener("click", onPlay);
@@ -184,6 +349,9 @@ export function createSettingsUi(
 
   return {
     setVisible(visible: boolean) {
+      // Leaving a capture armed while the menu closes would swallow the player's first
+      // keypress back in the game.
+      if (!visible) stopCapture();
       root.classList.toggle("is-hidden", !visible);
     },
     setRawInputActive(active: boolean) {

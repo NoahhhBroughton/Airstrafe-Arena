@@ -17,14 +17,21 @@ export const GROUND_ACCEL = 10;
  *
  * There is a ceiling worth knowing about. accelSpeed is min(accel * wishSpeed * dt, addSpeed),
  * and addSpeed can never exceed wishSpeed, so once accel >= 1/dt (64 at our tick rate) the
- * first term stops binding and every larger value behaves identically. 100 is past that line,
- * i.e. already maximum responsiveness - raising it to 1000 would change nothing here. Below 64
- * it is a real dial. This also means the meaningful knob for air control is
- * AIR_WISH_SPEED_CAP, not this.
+ * first term stops binding and every larger value behaves identically. 1000 is far past that
+ * line - it is the familiar bhop-server number rather than a distinct feel from, say, 100, and
+ * it stays correct if TICK_RATE ever rises. Below 64 it is a real dial. This also means the
+ * meaningful knob for air control is AIR_WISH_SPEED_CAP, not this.
  */
-export const AIR_ACCEL = 100;
+export const AIR_ACCEL = 1000;
 
-export const AIR_WISH_SPEED_CAP = 30;
+/**
+ * Airborne wishSpeed ceiling - the actual air-control dial, given AIR_ACCEL is saturated.
+ * Each tick can add up to (this - dot(velocity, wishDir)) along wishDir, so raising it both
+ * speeds up how fast strafing compounds and widens the range of mouse turn rates that gain
+ * speed at all. 75 is well above Source's ~30; it trades some of the precision-timing
+ * character for a much more forgiving strafe.
+ */
+export const AIR_WISH_SPEED_CAP = 75;
 export const MAX_GROUND_SPEED = 320;
 export const FRICTION = 4;
 export const STOP_SPEED = 100;

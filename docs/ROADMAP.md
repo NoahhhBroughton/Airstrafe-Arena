@@ -37,6 +37,11 @@ persistent memory of project progress across sessions.
   is not how the reference servers play.
 - **Settings screen added** (`Esc`), with live movement tuning, Source-1:1 sensitivity, and raw
   input to bypass OS mouse acceleration.
+- **`AIR_WISH_SPEED_CAP` raised 30 → 75.** A deliberate departure from CS feel: strafing is more
+  forgiving and builds speed faster. This is the knob that actually governs air control.
+- **`AIR_ACCEL` set to 1000**, the familiar bhop-server number. Functionally identical to 100 at
+  64 tick (it saturates at 64), but recognisable and still correct if the tick rate rises.
+- **Rebindable controls**, two slots per action, keyboard/mouse/wheel.
 
 ### Still open for the playtest
 Measured as working but not judged as *feeling* right — decide at the keyboard, then update
@@ -47,8 +52,8 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
   ramp too).
 - Bhop staircase spacing (260 units) and rise (36) were picked from jump-arc arithmetic, not
   from playing it.
-- `AIR_WISH_SPEED_CAP` (30) is the real air-control dial now that acceleration is saturated —
-  the most likely knob to want changing if strafing still doesn't feel right.
+- `AIR_WISH_SPEED_CAP` is now 75. It is the knob to reach for if strafing still doesn't feel
+  right — acceleration is saturated, so this is the only thing that changes air control.
 - Verify the sensitivity match with a 360° test against CS rather than trusting it on paper.
 
 ## Phase 2 — Test content

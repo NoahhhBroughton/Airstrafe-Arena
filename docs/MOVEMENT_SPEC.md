@@ -68,14 +68,18 @@ of just capping it like ground movement does. No friction is applied in air.
 **every larger value behaves identically**. `sv_airaccelerate 100` and `1000` are the same
 setting here; they differ in Source only because servers run different tick rates.
 
-Below that line it is a real dial, and Source's default of 10 sits well below it: a tick can
+Below that line it is a real dial, and Source's default of 10 sits well below it: a tick could
 only steer `10 * 30 * dt` = 4.7 u/s, which feels like being unable to turn in the air at all.
-That is why surf and bhop servers raise it as the first thing they configure (~100 for combat
-surf, ~1000 for bhop), and why this project ships 100 rather than Source's stock value.
+That is why surf and bhop servers raise it as the first thing they configure, and why this
+project ships 1000 — the familiar bhop-server number, chosen for recognisability and for staying
+correct if `TICK_RATE` ever rises, not because it differs from 100 today.
 
 The consequence worth internalising: **`AIR_WISH_SPEED_CAP` is the real air-control knob**, not
 `AIR_ACCEL`. Once acceleration is saturated, the cap alone decides how much velocity a tick can
-add and therefore how fast strafing compounds.
+add along `wishDir`, and therefore both how fast strafing compounds and how wide the range of
+mouse turn rates that gain speed at all. At 75 rather than Source's ~30, strafing is
+substantially more forgiving and builds speed faster; that is a deliberate departure from CS
+feel, decided by playtest.
 
 Do not clamp total velocity magnitude while airborne except at a sane upper bound for anti-cheat /
 physics stability (e.g. a generous cap far above normal bhop speeds, just to prevent runaway
@@ -127,8 +131,8 @@ function clipVelocity(vel, normal, overbounce = 1.0):
 | Constant | Starting value | Notes |
 |---|---|---|
 | `GROUND_ACCEL` | 10 | |
-| `AIR_ACCEL` | **100** | Source's `sv_airaccelerate`. See "Air acceleration is not a linear dial" below |
-| `AIR_WISH_SPEED_CAP` | ~30 units/s | Low cap is what makes strafing compound speed |
+| `AIR_ACCEL` | **1000** | Source's `sv_airaccelerate`. See "Air acceleration is not a linear dial" below |
+| `AIR_WISH_SPEED_CAP` | **75** units/s | The real air-control dial. Well above Source's ~30 — see below |
 | `MAX_GROUND_SPEED` | ~320 units/s | CS-like walk/run speed reference |
 | `FRICTION` | 4 | |
 | `STOP_SPEED` | 100 | Below this, friction stopping power doesn't scale down further |
