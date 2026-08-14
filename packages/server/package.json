@@ -1,0 +1,17 @@
+{
+  "name": "@airstrafe-arena/server",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput & node --watch dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@airstrafe-arena/shared": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}

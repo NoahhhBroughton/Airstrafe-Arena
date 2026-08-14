@@ -1,0 +1,19 @@
+{
+  "name": "@airstrafe-arena/client",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@airstrafe-arena/shared": "*",
+    "three": "^0.166.0"
+  },
+  "devDependencies": {
+    "vite": "^5.3.0",
+    "typescript": "^5.5.0",
+    "@types/three": "^0.166.0"
+  }
+}

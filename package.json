@@ -1,0 +1,19 @@
+{
+  "name": "airstrafe-arena",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/client",
+    "packages/server"
+  ],
+  "scripts": {
+    "dev:client": "npm run dev -w packages/client",
+    "dev:server": "npm run dev -w packages/server",
+    "build": "npm run build -w packages/shared && npm run build -w packages/client && npm run build -w packages/server",
+    "test": "npm run test -w packages/shared",
+    "typecheck": "npm run typecheck -w packages/shared && npm run typecheck -w packages/client && npm run typecheck -w packages/server"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
