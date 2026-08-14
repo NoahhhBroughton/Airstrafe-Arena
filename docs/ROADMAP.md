@@ -4,26 +4,42 @@ Work top to bottom. Don't start a phase until the previous one's exit criteria a
 check them honestly, not just "code exists." Update checkboxes as you go; this file is the
 persistent memory of project progress across sessions.
 
-## Phase 0 — Project scaffolding
-- [ ] npm workspaces set up (`shared`, `client`, `server`) and building/type-checking cleanly
-- [ ] Client: blank Three.js scene rendering, dev server running (Vite recommended)
-- [ ] Basic flat ground plane + a box to walk into, just to confirm the render loop works
-- **Exit criteria:** `npm run dev` opens a browser tab with a 3D scene and no console errors.
+## Phase 0 — Project scaffolding ✅
+- [x] npm workspaces set up (`shared`, `client`, `server`) and building/type-checking cleanly
+- [x] Client: blank Three.js scene rendering, dev server running (Vite recommended)
+- [x] Basic flat ground plane + a box to walk into, just to confirm the render loop works
+- **Exit criteria:** `npm run dev` opens a browser tab with a 3D scene and no console errors. ✅
 
 ## Phase 1 — Singleplayer movement prototype (the most important phase)
-- [ ] Pointer lock + mouse look (yaw/pitch, no roll)
-- [ ] Fixed-tick simulation loop (see ARCHITECTURE.md) wired to render loop with interpolation
-- [ ] Implement `groundAccelerate`, `airAccelerate`, `applyFriction`, `clipVelocity`,
+- [x] Pointer lock + mouse look (yaw/pitch, no roll)
+- [x] Fixed-tick simulation loop (see ARCHITECTURE.md) wired to render loop with interpolation
+- [x] Implement `groundAccelerate`, `airAccelerate`, `applyFriction`, `clipVelocity`,
       `airWishSpeed` cap, per `docs/MOVEMENT_SPEC.md`, as pure functions in `packages/shared`
-- [ ] Unit tests for the above pure functions
-- [ ] Capsule/box collision against static world geometry via Rapier shape casts (ground check,
+- [x] Unit tests for the above pure functions
+- [x] Capsule/box collision against static world geometry via Rapier shape casts (ground check,
       wall collision, ceiling)
-- [ ] Jump + landing behavior (velocity preserved, no reset)
-- [ ] A test map: flat ground, a bhop staircase (small ascending platforms), one surf ramp
-- [ ] Debug HUD: current speed, velocity vector, onGround state — essential for tuning
+- [x] Jump + landing behavior (velocity preserved, no reset)
+- [x] A test map: flat ground, a bhop staircase (small ascending platforms), one surf ramp
+- [x] Debug HUD: current speed, velocity vector, onGround state — essential for tuning
+- [ ] **Playtest sign-off — not yet done.** Everything above is built and verified mechanically
+      (automated browser run: bhop chain climbs 320 → ~400 u/s, surf ride reaches ~460 u/s, no
+      console errors), but nobody has actually *played* it. See exit criteria.
 - **Exit criteria:** you can personally bhop a chain of jumps and ride the surf ramp and it feels
   good. This is a subjective, human judgment call — don't skip it or self-certify from code review
   alone. Get actual playtesting in before moving on.
+
+### Known Phase 1 tuning questions for the playtest
+Things measured as working but not judged as *feeling* right — decide these at the keyboard,
+then update `docs/MOVEMENT_SPEC.md` with whatever the constants become:
+- Surf ramp is short: the drop from the start platform to where the ramp meets the ground is
+  ~414 units, so a ride lasts about a second unless you carry speed along its length. If it
+  wants to be a real ride, the surf section needs to be taller (which means redoing the access
+  ramp too).
+- Bhop staircase spacing (260 units) and rise (36) were picked from jump-arc arithmetic, not
+  from playing it.
+- Mouse sensitivity defaults to 2.0 at Source's `m_yaw` of 0.022 — no in-game way to change it
+  yet.
+- `AUTO_BHOP_ENABLED` is off, so every jump needs a fresh press. Worth trying both.
 
 ## Phase 2 — Test content
 - [ ] A few more surf ramps at different angles

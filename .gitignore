@@ -3,3 +3,6 @@ dist/
 .DS_Store
 *.log
 .env
+
+# Personal Claude Code overrides. .claude/settings.json (shared project config) is committed.
+.claude/settings.local.json

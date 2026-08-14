@@ -20,3 +20,60 @@ export const GROUND_NORMAL_MIN_Y = 0.7;
 
 // Config flag, not a hard rule - see docs/MOVEMENT_SPEC.md "Jump" section.
 export const AUTO_BHOP_ENABLED = false;
+
+// --- Player collision shape -------------------------------------------------------------
+
+// Capsule roughly matching Source's 32x32x72 player hull. A capsule rather than an AABB
+// because shape-casting a capsule against angled geometry produces clean slide normals, which
+// is what surf depends on - an AABB's corners catch on ramp seams.
+export const PLAYER_RADIUS = 16;
+export const PLAYER_HEIGHT = 72;
+/** Camera height above the player's feet. Source uses 64 of a 72-unit hull. */
+export const PLAYER_EYE_HEIGHT = 64;
+
+// --- Collision / integration ------------------------------------------------------------
+
+/** Max height the player is teleported up over when walking into a small ledge (Source: 18). */
+export const STEP_HEIGHT = 18;
+
+/** How far below the feet to look for ground each tick. Small, or we snap to distant floors. */
+export const GROUND_CHECK_DIST = 2;
+
+/**
+ * Radius reduction applied to the downward ground probe only. Keeps the probe from clipping the
+ * bottom edge of a wall the player is pressed against - see CollisionWorld.castPlayer. The cost
+ * is that ground state persists for the last couple of units past a ledge lip, which on a
+ * 16-unit radius is imperceptible.
+ */
+export const GROUND_PROBE_SHRINK = 2;
+
+/**
+ * Height the ground probe starts above the feet, subtracted back out of the result.
+ *
+ * A player resting on the floor sits within SKIN_WIDTH of it, so a probe starting at the feet
+ * begins already inside contact range and the shape cast degenerates: it returns a zero-length
+ * hit whose normal points at whatever feature it happened to resolve, often a nearby wall's
+ * corner rather than the floor. Starting the sweep clear of the surface makes the result a real
+ * measurement instead.
+ */
+export const GROUND_PROBE_LIFT = 1;
+
+/**
+ * Gap maintained between the player capsule and world geometry. Shape casts stop this far
+ * short of contact so the capsule never starts a tick already touching a surface - a zero-gap
+ * cast returns fraction 0 forever and the player sticks in place.
+ */
+export const SKIN_WIDTH = 0.1;
+
+/** Slide iterations per tick. Quake used 4; enough to resolve a floor+wall+wall corner. */
+export const MAX_MOVE_ITERATIONS = 4;
+
+/** Distinct surfaces the velocity can be clipped against in one tick before we give up. */
+export const MAX_CLIP_PLANES = 5;
+
+/**
+ * Absolute speed ceiling. Not a gameplay cap - normal bhop chains stay far below this. It only
+ * exists so a physics glitch or a hostile client can't produce a velocity that overflows into
+ * float garbage and desyncs prediction. See MOVEMENT_SPEC.md "Air movement".
+ */
+export const MAX_VELOCITY = 3500;

@@ -3,9 +3,93 @@
   <head>
     <meta charset="UTF-8" />
     <title>Airstrafe Arena</title>
+    <!-- Inline so the dev server has no favicon 404, keeping the console clean enough that a
+         real error stands out. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231a1d24'/%3E%3Cpath d='M2 11 L8 4 L14 11' stroke='%237aa2f7' stroke-width='2' fill='none'/%3E%3C/svg%3E"
+    />
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
       #app { width: 100%; height: 100%; }
+      canvas { display: block; }
+
+      /* HUD sits above the canvas but must never eat clicks - the canvas needs them to
+         acquire pointer lock. */
+      .hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        color: #e6e6e6;
+        user-select: none;
+      }
+
+      .hud-panel {
+        position: absolute;
+        left: 16px;
+        bottom: 16px;
+        padding: 12px 14px;
+        min-width: 260px;
+        background: rgba(12, 14, 18, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        backdrop-filter: blur(6px);
+      }
+
+      .hud-speed { display: flex; align-items: baseline; gap: 4px; }
+      .hud-speed-value { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .hud-speed-unit { font-size: 12px; opacity: 0.5; }
+
+      .hud-graph { display: block; width: 100%; height: 60px; margin: 6px 0 10px; }
+
+      .hud-stats {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 12px;
+        margin: 0;
+      }
+      .hud-stats dt { opacity: 0.45; }
+      .hud-stats dd { margin: 0; white-space: pre; font-variant-numeric: tabular-nums; }
+
+      /* Crosshair. Instagib is an aim game; a centre dot is not optional even in a movement
+         prototype, because it is also the only fixed reference for judging strafe turn rate. */
+      .hud-center {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 3px;
+        height: 3px;
+        margin: -1.5px 0 0 -1.5px;
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+      }
+
+      .hud-spots {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        padding: 10px 12px;
+        background: rgba(12, 14, 18, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        text-align: right;
+        line-height: 1.7;
+      }
+      .hud-spots b { font-weight: 600; opacity: 0.45; margin-right: 8px; }
+
+      .hud-hint {
+        position: absolute;
+        left: 50%;
+        top: 58%;
+        transform: translateX(-50%);
+        padding: 6px 12px;
+        background: rgba(12, 14, 18, 0.72);
+        border-radius: 4px;
+        opacity: 1;
+        transition: opacity 0.25s;
+      }
     </style>
   </head>
   <body>

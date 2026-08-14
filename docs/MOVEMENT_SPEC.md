@@ -118,6 +118,47 @@ Units above follow Source-convention relative scaling (not meters) — pick a co
 early (recommend: 1 unit ≈ 1 inch, matching Source, since most public tuning references use it)
 and keep world geometry scaled consistently to it.
 
+**Unit system: settled.** 1 unit ≈ 1 inch, Y-up (Three.js convention, *not* Source's Z-up — so
+a surface normal's "up" component is `normal.y` here). `JUMP_IMPULSE` 270 against `GRAVITY` 800
+gives a jump apex of 270²/1600 ≈ 45.6 units, matching the target above.
+
+### Collision shape and integration
+
+| Constant | Value | Notes |
+|---|---|---|
+| `PLAYER_HEIGHT` / `PLAYER_RADIUS` | 72 / 16 | Capsule, roughly Source's 32×32×72 hull |
+| `PLAYER_EYE_HEIGHT` | 64 | Camera height above the feet |
+| `STEP_HEIGHT` | 18 | Max ledge walked over without jumping (Source uses 18) |
+| `SKIN_WIDTH` | 0.1 | Gap kept between capsule and geometry on every cast |
+| `GROUND_CHECK_DIST` | 2 | How far below the feet the ground probe looks |
+| `MAX_MOVE_ITERATIONS` | 4 | Slide iterations per tick (Quake used 4) |
+| `MAX_CLIP_PLANES` | 5 | Distinct surfaces clipped against in one tick |
+| `MAX_VELOCITY` | 3500 | Sanity ceiling only — see "Air movement" above |
+
+Player **position is the feet** (bottom of the capsule), not its center. Collision uses capsule
+shape casts rather than an AABB: an AABB's corners catch on the seams between ramp brushes,
+which a surf ramp is made of.
+
+### Two things that are not obvious but are load-bearing
+
+Both were found by the player getting stuck rather than by reading the formulas, and both will
+silently reappear if the collision layer is ever rewritten:
+
+1. **Multi-plane clipping.** Clipping velocity against one surface at a time is not enough. In a
+   corner, sliding along plane A drives into plane B, whose clip drives back into A, and the
+   player jitters in place. Clip against the *set* of planes touched this tick, keeping the first
+   result that violates none of the others; with exactly two planes and no single-plane solution,
+   project onto their crease. Two contacts with the same normal must not both be recorded — a
+   duplicated plane "violates" itself and collapses the crease to a zero vector, which reads
+   in-game as the player stopping dead partway down a ramp.
+
+2. **The ground probe needs clearance on two axes.** It is swept from `GROUND_PROBE_LIFT` (1)
+   above the feet with the capsule narrowed by `GROUND_PROBE_SHRINK` (2). Without the lift, a
+   player resting on the floor starts the cast already inside contact range and the shape cast
+   degenerates, returning an arbitrary normal instead of the floor's. Without the shrink, a
+   player pressed against a wall catches the wall's bottom corner first and gets a ~45° normal,
+   reads as airborne, and cannot jump — which breaks bhopping any tight course.
+
 ## Testing movement in isolation
 
 Because `groundAccelerate`, `airAccelerate`, `applyFriction`, and `clipVelocity` are pure
@@ -125,3 +166,16 @@ functions in `packages/shared`, write unit tests for them directly (fixed input 
 → expected output) before ever touching a renderer. This is the fastest way to verify tuning
 changes don't break invariants (e.g. "strafing at a fixed optimal angle increases speed each
 tick while airborne").
+
+The whole per-tick step is testable the same way. `movePlayer` takes a `CollisionWorld`
+interface — two methods' worth of shape casting — rather than a physics engine, so tests drive
+it against hand-written worlds (an infinite plane at a given tilt, an empty void, a spy that
+records what was cast) with no Rapier or WASM involved. Keep it that way: the moment movement
+imports a physics engine directly, it stops being testable and stops being shareable with the
+server.
+
+A note on what a test can and cannot show here. On a surf ramp, gravity's pull along the slope
+is ~655 u/s² against a 30 u/s air-speed cap, so total speed is useless for detecting whether air
+control is working — it's swamped. Pick an axis the forces don't touch: a ramp tilted about Z has
+a normal with no Z component, and gravity has none either, so *all* change in `velocity.z` is
+airAccelerate's doing and can be asserted exactly.

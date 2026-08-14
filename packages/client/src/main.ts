@@ -1,50 +1,133 @@
-// Phase 0 scaffold: a bare Three.js scene with a ground plane and a box, just to confirm the
-// render loop runs cleanly. Phase 1 replaces this with pointer-lock movement + the fixed-tick
-// simulation loop described in docs/ARCHITECTURE.md - do not build gameplay directly on top of
-// this file without that structure in place.
+// Phase 1: singleplayer movement prototype.
+//
+// The structure here matters more than it looks. Simulation runs at a fixed TICK_DT and the
+// renderer interpolates between the last two ticks (docs/ARCHITECTURE.md) - not because 64Hz
+// looks better, but because Phase 3's prediction and reconciliation require the client to
+// advance in the same discrete steps the server does. Anything that steps movement off a raw
+// frame delta has to be rewritten later, so it's built this way from the start.
 
 import * as THREE from "three";
+import {
+  createPlayerState,
+  movePlayer,
+  vec3,
+  PLAYER_EYE_HEIGHT,
+  TEST_MAP,
+  TICK_DT,
+  type PlayerState,
+} from "@airstrafe-arena/shared";
+import { createRapierWorld, initRapier } from "./rapier-world.js";
+import { createInput } from "./input.js";
+import { buildMapScene } from "./scene.js";
+import { createHud } from "./hud.js";
 
-const app = document.getElementById("app")!;
+/**
+ * Ticks we're willing to run in one frame before giving up on catching up. Without this, a
+ * long stall (alt-tab, a breakpoint) hands the loop a huge accumulator, which takes longer to
+ * simulate than it does to accrue - the classic spiral of death. Dropping the backlog costs a
+ * little apparent time; not dropping it locks the tab up.
+ */
+const MAX_TICKS_PER_FRAME = 8;
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x222233);
+async function main(): Promise<void> {
+  const app = document.getElementById("app");
+  if (!app) throw new Error("missing #app element");
 
-const camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 2000);
-camera.position.set(0, 60, 200);
+  await initRapier();
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-app.appendChild(renderer.domElement);
+  const map = TEST_MAP;
+  const collision = createRapierWorld(map);
+  const scene = buildMapScene(map);
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(2000, 2000),
-  new THREE.MeshStandardMaterial({ color: 0x445544 }),
-);
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
+  const camera = new THREE.PerspectiveCamera(
+    100, // wide, like a Source FOV of ~90 horizontal - narrow FOV makes speed unreadable
+    window.innerWidth / window.innerHeight,
+    1,
+    8000,
+  );
 
-const box = new THREE.Mesh(
-  new THREE.BoxGeometry(50, 50, 50),
-  new THREE.MeshStandardMaterial({ color: 0xcc5544 }),
-);
-box.position.set(0, 25, 0);
-scene.add(box);
-
-const light = new THREE.DirectionalLight(0xffffff, 1.5);
-light.position.set(100, 200, 100);
-scene.add(light);
-scene.add(new THREE.AmbientLight(0x666666));
-
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
-});
+  app.appendChild(renderer.domElement);
 
-function animate() {
-  requestAnimationFrame(animate);
-  box.rotation.y += 0.01;
-  renderer.render(scene, camera);
+  const input = createInput(renderer.domElement, map.spawnYaw);
+  const hud = createHud(app, map.spots);
+
+  let state: PlayerState = createPlayerState(map.spawn);
+  // Position at the end of the previous tick, so rendering can interpolate toward the current
+  // one instead of snapping 64 times a second.
+  let previousPosition = vec3.clone(state.position);
+
+  const teleport = (position: typeof map.spawn, yaw: number) => {
+    state = createPlayerState(position);
+    previousPosition = vec3.clone(state.position);
+    input.setYaw(yaw);
+  };
+
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "KeyR") {
+      teleport(map.spawn, map.spawnYaw);
+      return;
+    }
+    // Digit1..DigitN jump to the map's named test spots - see MapSpot.
+    const match = /^Digit([1-9])$/.exec(e.code);
+    if (match?.[1]) {
+      const spot = map.spots[Number(match[1]) - 1];
+      if (spot) teleport(spot.position, spot.yaw);
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  let accumulator = 0;
+  let lastFrameTime = performance.now();
+  let smoothedFps = 60;
+
+  function frame(now: number): void {
+    requestAnimationFrame(frame);
+
+    const frameDt = Math.min((now - lastFrameTime) / 1000, 0.25);
+    lastFrameTime = now;
+    smoothedFps += (1 / Math.max(frameDt, 1e-6) - smoothedFps) * 0.1;
+
+    accumulator += frameDt;
+    let ticks = 0;
+    while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
+      previousPosition = state.position;
+      state = movePlayer(state, input.sample(), collision, TICK_DT);
+      accumulator -= TICK_DT;
+      ticks++;
+    }
+    if (ticks === MAX_TICKS_PER_FRAME) accumulator = 0;
+
+    // Render between the last two simulated positions. View angles are applied straight from
+    // the mouse rather than from the tick, so aim stays as responsive as the display allows
+    // even though movement is quantized to 64Hz.
+    const alpha = accumulator / TICK_DT;
+    camera.position.set(
+      previousPosition.x + (state.position.x - previousPosition.x) * alpha,
+      previousPosition.y + (state.position.y - previousPosition.y) * alpha + PLAYER_EYE_HEIGHT,
+      previousPosition.z + (state.position.z - previousPosition.z) * alpha,
+    );
+    // YXZ order keeps yaw and pitch independent, so the horizon never rolls.
+    camera.rotation.set(input.pitch, input.yaw, 0, "YXZ");
+
+    hud.update(state, smoothedFps, input.locked);
+    renderer.render(scene, camera);
+  }
+
+  requestAnimationFrame(frame);
 }
-animate();
+
+void main().catch((err: unknown) => {
+  console.error(err);
+  const app = document.getElementById("app");
+  if (app) {
+    app.textContent = `Failed to start: ${err instanceof Error ? err.message : String(err)}`;
+  }
+});
