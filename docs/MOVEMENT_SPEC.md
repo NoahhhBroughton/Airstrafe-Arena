@@ -184,20 +184,26 @@ crouch already held.
 | `SLIDE_END_SPEED` | 120 | Below this the slide gives out |
 | `SLIDE_GRACE_TIME` | 2s | Speed is untouched for this long before falloff begins |
 | `SLIDE_FRICTION` | 0.35 | Applied only after the grace window; against `FRICTION` 4 |
+| `SLIDE_TURN_RATE` | 240°/s | How fast a slide can be aimed. Steering only — never adds speed |
 
 **Entering a slide boosts you to `SLIDE_BOOST_SPEED`**, well over `MAX_GROUND_SPEED` (320). That
 jump is the reward for sliding and the reason to slide out of a run rather than keep running. It
 is applied as a *floor, never a cap*: entering already faster — off a bhop chain, say — keeps
 whatever speed you arrived with instead of being clamped down to it.
 
-**A slide is air strafing brought down to the ground.** It accelerates with `airAccelerate` and
-the same low airborne wishSpeed cap, not `groundAccelerate` — so pointing the mouse across your
-velocity compounds speed exactly as it does mid-air. Ground acceleration would instead haul you
-toward `MAX_GROUND_SPEED` and cap you there, which is the opposite of what a slide is for.
+**A slide steers; it does not accelerate.** Hold a movement key and the slide *rotates* its
+velocity toward where you are looking, at up to `SLIDE_TURN_RATE` (240°/s), keeping the
+magnitude exactly. Nothing about mouse movement can add speed.
 
-For the first `SLIDE_GRACE_TIME` a slide is free: no friction at all, so the only things
-changing your speed are the slope and your own strafing. After that `SLIDE_FRICTION` starts
-taking it back, and the slide ends at `SLIDE_END_SPEED`.
+This was tried the other way first — accelerating with the airborne wishSpeed cap — and it made
+a slide into air strafing on the ground, where the usual strafe technique built speed
+indefinitely. Rotation is spherical for the same reason it is elsewhere: a linear blend between
+two headings shrinks the vector as it crosses, leaking speed out of a manoeuvre meant to cost
+none.
+
+For the first `SLIDE_GRACE_TIME` a slide is free: no friction at all, so the only thing changing
+your speed is the slope. After that `SLIDE_FRICTION` starts taking it back, and the slide ends
+at `SLIDE_END_SPEED`.
 
 Two more details that carry the feel:
 
@@ -242,6 +248,18 @@ it a skill rather than a free bonus.
 Standing back up must check for room, or the player grows into whatever they crouched under: on
 the ground, sweep the ducked hull upward by the height difference; in the air, sweep it *down*
 by the same amount, since that is where the feet are about to go.
+
+### Why air-crouching needs the view to lag the hull
+
+The numbers cancel exactly. Ducking mid-air raises the feet by `DUCK_HEIGHT_GAIN` (18) and drops
+the eye offset by the same 18 (64 → 46), so a camera placed at `feet + eyeHeight(duck)` **does
+not move at all**. Air-crouching had no visible tell whatsoever.
+
+The fix is to let the collision hull snap while the camera's own duck amount eases behind it
+over `DUCK_VIEW_SMOOTH_TIME`. The feet jump 18 immediately, the eye offset has not caught up
+yet, so the view visibly rises — then settles as it does. Releasing runs it in reverse: the
+camera drops and rises back. This is cosmetic and lives entirely at render time; the simulation
+never sees it.
 
 Ducking scales ground speed only. Applying it airborne would make a crouch-jump cost air
 control, turning a movement technique into a penalty.

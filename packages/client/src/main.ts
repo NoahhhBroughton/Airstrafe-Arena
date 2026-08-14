@@ -12,6 +12,7 @@ import {
   eyeHeight,
   movePlayer,
   vec3,
+  DUCK_VIEW_SMOOTH_TIME,
   TEST_MAP,
   TICK_DT,
   type PlayerState,
@@ -19,6 +20,7 @@ import {
 import { createRapierWorld, initRapier } from "./rapier-world.js";
 import { createInput } from "./input.js";
 import { buildMapScene } from "./scene.js";
+import { createViewModel } from "./viewmodel.js";
 import { createHud } from "./hud.js";
 import { createSettingsStore, verticalFovDegrees } from "./settings.js";
 import { createSettingsUi } from "./settings-ui.js";
@@ -59,6 +61,9 @@ async function main(): Promise<void> {
 
   const input = createInput(renderer.domElement, settings, map.spawnYaw);
   const hud = createHud(app, map.spots, settings);
+  const viewModel = createViewModel();
+  scene.add(viewModel.object);
+
   const menu = createSettingsUi(
     app,
     settings,
@@ -76,13 +81,16 @@ async function main(): Promise<void> {
   // Position at the end of the previous tick, so rendering can interpolate toward the current
   // one instead of snapping 64 times a second.
   let previousPosition = vec3.clone(state.position);
-  // Interpolated alongside position so the eye glides down on a crouch instead of snapping.
-  let previousDuck = state.duck;
+  /**
+   * The camera's own duck amount, easing behind the simulation's. Cosmetic only - see
+   * DUCK_VIEW_SMOOTH_TIME for why it must lag rather than track exactly.
+   */
+  let viewDuck = state.duck;
 
   const teleport = (position: typeof map.spawn, yaw: number) => {
     state = createPlayerState(position);
     previousPosition = vec3.clone(state.position);
-    previousDuck = state.duck;
+    viewDuck = state.duck;
     input.setYaw(yaw);
   };
 
@@ -107,6 +115,8 @@ async function main(): Promise<void> {
   let accumulator = 0;
   let lastFrameTime = performance.now();
   let smoothedFps = 60;
+  /** Reused each frame rather than allocated, since this runs every render. */
+  const feet = new THREE.Vector3();
 
   function frame(now: number): void {
     requestAnimationFrame(frame);
@@ -123,13 +133,13 @@ async function main(): Promise<void> {
       airWishSpeedCap: s.airWishSpeedCap,
       slide: s.slide,
       slideBoostSpeed: s.slideBoostSpeed,
+      slideTurnRate: s.slideTurnRate,
     };
 
     accumulator += frameDt;
     let ticks = 0;
     while (accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
       previousPosition = state.position;
-      previousDuck = state.duck;
       state = movePlayer(state, input.sample(), collision, TICK_DT, moveOptions);
       accumulator -= TICK_DT;
       ticks++;
@@ -139,13 +149,23 @@ async function main(): Promise<void> {
     // Render between the last two simulated positions. View angles are applied straight from
     // the mouse rather than from the tick, so aim stays as responsive as the display allows
     // even though movement is quantized to 64Hz.
+    // The view lags the hull. Airborne, the feet snap up 18 the instant crouch goes down while
+    // this catches up over DUCK_VIEW_SMOOTH_TIME, so the camera visibly rises and settles -
+    // without the lag the two cancel exactly and crouching mid-air looks like nothing happened.
+    const follow = 1 - Math.exp(-frameDt / DUCK_VIEW_SMOOTH_TIME);
+    viewDuck += (state.duck - viewDuck) * follow;
+
     const alpha = accumulator / TICK_DT;
-    const eye = eyeHeight(previousDuck + (state.duck - previousDuck) * alpha);
-    camera.position.set(
+    feet.set(
       previousPosition.x + (state.position.x - previousPosition.x) * alpha,
-      previousPosition.y + (state.position.y - previousPosition.y) * alpha + eye,
+      previousPosition.y + (state.position.y - previousPosition.y) * alpha,
       previousPosition.z + (state.position.z - previousPosition.z) * alpha,
     );
+
+    // Body and camera share the same interpolated feet position, so the view can never drift
+    // off the model it belongs to.
+    viewModel.update(state, viewDuck, feet, input.yaw);
+    camera.position.set(feet.x, feet.y + eyeHeight(viewDuck), feet.z);
     // YXZ order keeps yaw and pitch independent, so the horizon never rolls.
     camera.rotation.set(input.pitch, input.yaw, 0, "YXZ");
 

@@ -43,6 +43,7 @@ import {
   SLIDE_FRICTION,
   SLIDE_GRACE_TIME,
   SLIDE_MIN_SPEED,
+  SLIDE_TURN_RATE,
   STEP_HEIGHT,
 } from "./constants.js";
 
@@ -98,6 +99,7 @@ export interface MoveOptions {
   airWishSpeedCap?: number;
   slide?: boolean;
   slideBoostSpeed?: number;
+  slideTurnRate?: number;
 }
 
 export function createPlayerState(position: Vec3): PlayerState {
@@ -111,6 +113,41 @@ export function createPlayerState(position: Vec3): PlayerState {
     sliding: false,
     slideTime: 0,
   };
+}
+
+/**
+ * Rotate horizontal velocity toward `target` by at most `maxAngleDeg`, keeping its magnitude.
+ *
+ * Steering, not acceleration: the speed that goes in comes out. Vertical velocity is left
+ * alone so a slide down a ramp keeps following the surface.
+ */
+function steerTowards(velocity: Vec3, target: Vec3, maxAngleDeg: number): Vec3 {
+  const horizontal = { x: velocity.x, y: 0, z: velocity.z };
+  const speed = vec3.length(horizontal);
+  if (speed < EPSILON || vec3.lengthSq(target) < EPSILON) return velocity;
+
+  const from = vec3.scale(horizontal, 1 / speed);
+  const cos = Math.min(Math.max(vec3.dot(from, target), -1), 1);
+  const angle = Math.acos(cos);
+  if (angle < 1e-5) return velocity;
+
+  const maxAngle = (maxAngleDeg * Math.PI) / 180;
+  const t = Math.min(1, maxAngle / angle);
+
+  // Spherical interpolation between the two headings. A linear blend would shrink the vector
+  // as it crosses the midpoint, which would leak speed out of a manoeuvre that is meant to
+  // cost none.
+  const sinTotal = Math.sin(angle);
+  const direction =
+    sinTotal < 1e-6
+      ? target
+      : vec3.normalize({
+          x: (from.x * Math.sin((1 - t) * angle) + target.x * Math.sin(t * angle)) / sinTotal,
+          y: 0,
+          z: (from.z * Math.sin((1 - t) * angle) + target.z * Math.sin(t * angle)) / sinTotal,
+        });
+
+  return { x: direction.x * speed, y: velocity.y, z: direction.z * speed };
 }
 
 /** Total collision height at a given duck amount. */
@@ -458,23 +495,22 @@ export function movePlayer(
 
   if (onGround) {
     if (sliding) {
-      // A slide is air strafing brought down to the ground: the same low airborne wishSpeed
-      // cap, so pointing the mouse across your velocity compounds speed exactly as it does
-      // mid-air. Ground acceleration would instead haul you toward MAX_GROUND_SPEED and cap
-      // you there, which is the opposite of what a slide is for.
-      //
-      // Free for SLIDE_GRACE_TIME - nothing but the slope and your own strafing changes your
-      // speed - then friction starts taking it back.
+      // Free for SLIDE_GRACE_TIME - nothing but the slope changes your speed - then friction
+      // starts taking it back.
       if (slideTime > SLIDE_GRACE_TIME) {
         velocity = applyFriction(velocity, dt, SLIDE_FRICTION);
       }
-      velocity = airAccelerate(
-        velocity,
-        wishDir,
-        dt,
-        airWishSpeed(MAX_GROUND_SPEED * inputMagnitude, options.airWishSpeedCap),
-        options.airAccel,
-      );
+      // Steering, not acceleration. Hold a movement key and the slide turns toward where you
+      // are looking, keeping its speed exactly. Accelerating here instead - which is what the
+      // airborne wishSpeed cap did - made a slide into air strafing on the ground, where mouse
+      // technique built speed indefinitely.
+      if (inputMagnitude > 0) {
+        velocity = steerTowards(
+          velocity,
+          wishDir,
+          (options.slideTurnRate ?? SLIDE_TURN_RATE) * dt,
+        );
+      }
     } else {
       // Ducking slows you down, but only on the ground. Applying it airborne would make a
       // crouch-jump cost air control, turning a movement technique into a penalty.

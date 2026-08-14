@@ -661,24 +661,42 @@ test("slide speed holds for SLIDE_GRACE_TIME, then falls off", () => {
   assert.ok(afterFalloff < atGraceEnd * 0.9, `no falloff after grace: ${atGraceEnd} -> ${afterFalloff}`);
 });
 
-test("strafing during a slide compounds speed, the same way it does mid-air", () => {
+test("holding forward steers a slide toward where you are looking", () => {
+  const world = flatGround();
+  let state: PlayerState = {
+    ...createPlayerState({ x: 0, y: 60, z: 0 }),
+    velocity: { x: 0, y: 0, z: -500 }, // sliding toward -Z
+  };
+  while (!state.onGround) state = movePlayer(state, input({ crouch: true }), world, TICK_DT);
+  assert.equal(state.sliding, true);
+
+  // Look 90 degrees to the left (-X) and hold forward.
+  const yaw = Math.PI / 2;
+  for (let i = 0; i < 64; i++) {
+    state = movePlayer(state, input({ forward: 1, crouch: true, yaw }), world, TICK_DT);
+  }
+
+  const heading = vec3.normalize({ x: state.velocity.x, y: 0, z: state.velocity.z });
+  assert.ok(heading.x < -0.95, `slide did not turn to face -X: heading x=${heading.x}`);
+});
+
+test("steering a slide costs no speed and cannot gain any", () => {
   const world = flatGround();
   const enter = (): PlayerState => {
     let s: PlayerState = {
       ...createPlayerState({ x: 0, y: 60, z: 0 }),
-      velocity: { x: 0, y: 0, z: -400 },
+      velocity: { x: 0, y: 0, z: -500 },
     };
     while (!s.onGround) s = movePlayer(s, input({ crouch: true }), world, TICK_DT);
     return s;
   };
 
-  let passive = enter();
+  // Drive it with the optimal air-strafe pattern - the exact technique that used to build
+  // speed here when a slide accelerated with the airborne wishSpeed cap.
   let strafing = enter();
   const entry = vec3.horizontalLength(strafing.velocity);
 
   for (let i = 0; i < 100; i++) {
-    passive = movePlayer(passive, input({ crouch: true }), world, TICK_DT);
-    // Same optimal-angle strafe as air strafing: wishDir held near-perpendicular to velocity.
     const sign = Math.floor(i / 12) % 2 === 0 ? 1 : -1;
     const speed = Math.max(vec3.horizontalLength(strafing.velocity), 1);
     const theta =
@@ -694,16 +712,11 @@ test("strafing during a slide compounds speed, the same way it does mid-air", ()
     );
   }
 
-  // A slide uses airAccelerate, so the same mouse technique that builds speed in the air builds
-  // it on the ground. Ground acceleration would have capped both at MAX_GROUND_SPEED instead.
-  assert.ok(
-    vec3.horizontalLength(strafing.velocity) > entry,
-    `strafing a slide did not gain: ${entry} -> ${vec3.horizontalLength(strafing.velocity)}`,
-  );
-  assert.ok(
-    vec3.horizontalLength(strafing.velocity) > vec3.horizontalLength(passive.velocity),
-    "strafing should beat sliding passively",
-  );
+  // Steering is a rotation, so within the grace window the magnitude is untouched - no gain
+  // from mouse technique, and no loss for turning either.
+  const after = vec3.horizontalLength(strafing.velocity);
+  assert.ok(after <= entry + 1e-6, `steering gained speed: ${entry} -> ${after}`);
+  assert.ok(after > entry - 1e-6, `steering cost speed: ${entry} -> ${after}`);
 });
 
 test("a slide ends on releasing crouch, on jumping, and when it runs out of speed", () => {

@@ -59,9 +59,15 @@ persistent memory of project progress across sessions.
   alternates A and D, so every strafe cycle fired one. Written up in `MOVEMENT_SPEC.md` — the
   general point is that no trigger on the strafe keys can coexist with air strafing.
 - **Slide** added: crouch while moving fast (from a run or through a landing) launches you to
-  `SLIDE_BOOST_SPEED` (750). It uses `airAccelerate`, so strafing builds speed on the ground the
-  same way it does mid-air; speed is untouched for 2 seconds, then falls off. Downhill slides
-  accelerate. Boost speed is tunable in the settings screen.
+  `SLIDE_BOOST_SPEED` (750), held for 2 seconds before falling off. It **steers** toward where
+  you look rather than accelerating — an earlier version used `airAccelerate` and turned into
+  air strafing on the ground, where mouse technique built speed indefinitely. Downhill slides
+  still accelerate from slope gravity. Boost speed and turn rate are tunable in settings.
+- **First-person body added** (`viewmodel.ts`): blocky legs and pelvis, posed for standing,
+  walking, crouching and sliding. Crouching previously had no visual tell at all.
+- **Air-crouch now visibly moves the camera.** The hull change and the eye-offset change cancel
+  exactly, so the view used to stay perfectly still; the camera's duck now eases behind the
+  hull's, which makes the pop visible. Cosmetic, render-time only.
 
 ### Scope added during Phase 1 (not in the original plan)
 - Settings screen with live movement tuning, Source-1:1 sensitivity, raw input, FOV.
@@ -112,6 +118,10 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
   other move smoothly with no visible rubber-banding under normal conditions.
 
 ## Phase 4 — Instagib combat
+- [ ] **Laser weapon viewmodel** — requested during Phase 1 as an eventual want. Deferred here
+      deliberately: a weapon model is only worth building against real fire/hit behaviour, and
+      the first-person body added in Phase 1 (`packages/client/src/viewmodel.ts`) is where arms
+      and a weapon would attach when the time comes.
 - [ ] Hitscan raycast on fire input
 - [ ] Server-side lag-compensated hit registration per ARCHITECTURE.md
 - [ ] One-shot kill, respawn

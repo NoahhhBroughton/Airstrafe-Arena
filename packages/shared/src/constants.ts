@@ -84,6 +84,18 @@ export const DUCK_HEIGHT_GAIN = PLAYER_HEIGHT - PLAYER_DUCK_HEIGHT;
  */
 export const DUCK_TRANSITION_TIME = 0.2;
 
+/**
+ * Seconds for the *camera* to follow a duck, as opposed to the collision hull.
+ *
+ * These have to differ or air-crouching is invisible. Ducking mid-air raises the feet by
+ * DUCK_HEIGHT_GAIN (18) and lowers the eye offset by exactly the same 18 (64 down to 46), so
+ * the two cancel and the camera does not move at all. Letting the hull snap while the view
+ * eases behind it means the camera visibly pops up as the feet tuck, then settles - and drops
+ * and rises again on release. Purely cosmetic, so this is applied at render time and never
+ * touches the simulation.
+ */
+export const DUCK_VIEW_SMOOTH_TIME = 0.12;
+
 /** Ducked movement speed, as a fraction of MAX_GROUND_SPEED. Source uses about a third. */
 export const DUCK_SPEED_SCALE = 1 / 3;
 
@@ -114,6 +126,16 @@ export const SLIDE_END_SPEED = 120;
  * chain, say) keeps whatever speed you arrived with rather than being clamped down to it.
  */
 export const SLIDE_BOOST_SPEED = 750;
+
+/**
+ * How fast a slide can be steered, in degrees per second, while a movement key is held.
+ *
+ * A slide *turns* its velocity toward where you are looking; it never accelerates it. That is
+ * deliberate: accelerating a slide with the airborne wishSpeed cap turned it into air strafing
+ * on the ground, where mouse technique built speed indefinitely. Rotating preserves the
+ * magnitude exactly, so the only things that change slide speed are the slope and friction.
+ */
+export const SLIDE_TURN_RATE = 240;
 
 /**
  * Seconds a slide holds its speed before friction starts eating it. Inside this window a slide

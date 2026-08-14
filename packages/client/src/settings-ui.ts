@@ -125,6 +125,13 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
         step: 25,
         hint: "Speed a slide launches you to. A floor, not a cap — entering faster keeps what you arrived with.",
       },
+      {
+        kind: "number",
+        key: "slideTurnRate",
+        label: "Slide steering",
+        step: 10,
+        hint: "Degrees per second a slide turns toward where you look while holding a move key. Steering only — it never adds speed.",
+      },
     ],
   },
 ];
