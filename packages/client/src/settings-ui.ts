@@ -86,7 +86,7 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
         kind: "toggle",
         key: "thirdPersonLeftShoulder",
         label: "Third person: left shoulder",
-        hint: "Which shoulder the third-person camera sits over. Off is the right shoulder.",
+        hint: "Which shoulder third person starts on. Off is the right shoulder. The swap bind moves it live; this is what it returns to.",
       },
     ],
   },

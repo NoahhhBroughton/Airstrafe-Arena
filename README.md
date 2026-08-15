@@ -32,6 +32,7 @@ Then open the printed URL and click the canvas to lock the mouse.
 | `Space` | jump — hold it to keep bhopping (auto-bhop is on by default) |
 | `Left Ctrl` | crouch — duck mid-jump for extra height, or land on it at speed to slide |
 | `V` | swap first / third person |
+| `B` | swap shoulder (third person) |
 | `1` / `2` / `3` | teleport to the spawn / bhop staircase / surf platform |
 | `R` | respawn |
 | `Esc` | settings |
@@ -54,10 +55,15 @@ person just hides the head and puts the camera in it. Two models would drift, an
 in one would stay wrong in the other. `V` swaps between them on the fly, and the third-person
 camera sits over a shoulder (side is a setting) so the model never covers your crosshair.
 
-Everything is boxes — square cross-sections, tapered, flat-shaded. Limbs bend as *curves* rather
-than corners because each bone is a few stacked boxes sharing the bend
-([rig.ts](packages/client/src/rig.ts)). That's the cheap stand-in for skinning; real skinning
-needs an authored weighted mesh, which is bundled with Phase 2's glTF work.
+**Proportions are Minecraft's, 1:1.** That model is 32 pixels tall — 8 head, 12 torso, 12 legs —
+and our hull is 72 units, so one pixel is 2.25 units and the three stack to exactly 72. Every
+dimension is a pixel count times that scale, so the silhouette is the familiar one rather than an
+approximation of it. Where it departs from Minecraft is articulation: arms and legs have elbows
+and knees, so the body holds a pose instead of swinging rigid planks
+([rig.ts](packages/client/src/rig.ts)).
+
+The shoulder setting is the *default* third-person side, not a lock — `B` moves it live and
+re-entering third person returns to the preferred side.
 
 The instagib laser ([weapon.ts](packages/client/src/weapon.ts)) has no behaviour yet — no firing,
 no hits, that's Phase 4. It exists so movement can be tuned against what the game actually looks

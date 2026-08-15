@@ -42,9 +42,9 @@ const MAX_TICKS_PER_FRAME = 8;
  * between you and your own crosshair, and the offset is what makes the character read as
  * *your* character rather than something you are following.
  */
-const THIRD_PERSON_DISTANCE = 130;
-const THIRD_PERSON_SHOULDER = 34;
-const THIRD_PERSON_RISE = 12;
+const THIRD_PERSON_DISTANCE = 210;
+const THIRD_PERSON_SHOULDER = 30;
+const THIRD_PERSON_RISE = 10;
 
 async function main(): Promise<void> {
   const app = document.getElementById("app");
@@ -81,9 +81,17 @@ async function main(): Promise<void> {
   const weapon = createWeapon();
 
   let firstPerson = true;
+  /**
+   * Which shoulder the camera is currently over. The setting is the *default*, not a lock:
+   * entering third person starts on the preferred side, and the swap bind moves it for as long
+   * as you stay in third person.
+   */
+  let leftShoulder = settings.current.thirdPersonLeftShoulder;
+
   const applyViewMode = () => {
     character.setFirstPerson(firstPerson);
     weapon.attachTo(firstPerson ? camera : character.rightHand, firstPerson);
+    if (!firstPerson) leftShoulder = settings.current.thirdPersonLeftShoulder;
   };
   applyViewMode();
 
@@ -123,6 +131,10 @@ async function main(): Promise<void> {
     if (actionId === "toggleView") {
       firstPerson = !firstPerson;
       applyViewMode();
+      return;
+    }
+    if (actionId === "swapShoulder") {
+      leftShoulder = !leftShoulder;
       return;
     }
     if (actionId === "respawn") {
@@ -195,7 +207,7 @@ async function main(): Promise<void> {
 
     // Body and camera share the same interpolated feet position, so the view can never drift
     // off the model it belongs to.
-    character.update(state, viewDuck, feet, input.yaw);
+    character.update(state, viewDuck, feet, input.yaw, frameDt);
 
     eye.set(feet.x, feet.y + eyeHeight(viewDuck), feet.z);
     // YXZ order keeps yaw and pitch independent, so the horizon never rolls.
@@ -206,7 +218,7 @@ async function main(): Promise<void> {
     } else {
       lookDir.set(0, 0, -1).applyEuler(camera.rotation);
       // Step sideways to the chosen shoulder first, then pull back along the view from there.
-      const side = settings.current.thirdPersonLeftShoulder ? -1 : 1;
+      const side = leftShoulder ? -1 : 1;
       shoulder
         .set(0, 0, 0)
         .addScaledVector(right.set(1, 0, 0).applyEuler(camera.rotation), THIRD_PERSON_SHOULDER * side);

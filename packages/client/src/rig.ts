@@ -32,6 +32,16 @@ export function taperedBox(
   return new THREE.Mesh(geometry, material);
 }
 
+/** A plain rectangular slab, centred on its origin. Minecraft parts are boxes, not tapers. */
+export function slab(
+  width: number,
+  height: number,
+  depth: number,
+  material: THREE.Material,
+): THREE.Mesh {
+  return new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+}
+
 export interface Bone {
   /** Rotate this to swing the whole bone from its joint. */
   readonly pivot: THREE.Group;
@@ -52,8 +62,8 @@ export interface Bone {
  * scale, where the facets are meant to show.
  */
 export function createBone(
-  topSide: number,
-  bottomSide: number,
+  width: number,
+  depth: number,
   length: number,
   material: THREE.Material,
   parts = 3,
@@ -70,14 +80,7 @@ export function createBone(
     attach.add(joint);
     joints.push(joint);
 
-    const t = i / parts;
-    const next = (i + 1) / parts;
-    const mesh = taperedBox(
-      topSide + (bottomSide - topSide) * t,
-      topSide + (bottomSide - topSide) * next,
-      partLength,
-      material,
-    );
+    const mesh = slab(width, partLength, depth, material);
     mesh.position.y = -partLength / 2;
     joint.add(mesh);
 

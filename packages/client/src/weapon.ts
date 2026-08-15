@@ -11,9 +11,11 @@
 import * as THREE from "three";
 import { vec3, MAX_GROUND_SPEED, type PlayerState } from "@airstrafe-arena/shared";
 import { stretchBetween, taperedBox } from "./rig.js";
+// Same numbers and colours as the character's arms. These are separate meshes - the viewmodel
+// needs bob and sway that the world model must not have - so sharing the dimensions is the only
+// thing that makes them read as the same pair of arms across the two views.
+import { LIMB, SHIRT, SKIN } from "./character.js";
 
-const SKIN = 0xd8a07a;
-const SLEEVE = 0x46618f;
 const GUNMETAL = 0x2a2e38;
 const GUN_TRIM = 0x555c6b;
 const LASER = 0x5fd8ff;
@@ -55,8 +57,11 @@ const GRIP_HAND = new THREE.Vector3(0, -4, 5);
 const FORE_HAND = new THREE.Vector3(0, -3.5, -13);
 // Elbows enter frame from the lower right. Kept well forward of the camera - drawn back toward
 // it they pass within a few units of the near plane and fill the screen edge.
-const RIGHT_ELBOW = new THREE.Vector3(5, -17, 15);
-const LEFT_ELBOW = new THREE.Vector3(-5, -16, 2);
+const RIGHT_ELBOW = new THREE.Vector3(6, -16, 16);
+const LEFT_ELBOW = new THREE.Vector3(-6, -15, 3);
+// Where the arms leave the body. Off-screen below, so only the forearms and hands are in frame.
+const RIGHT_SHOULDER = new THREE.Vector3(6, -34, 26);
+const LEFT_SHOULDER = new THREE.Vector3(-10, -32, 18);
 
 export interface Weapon {
   readonly object: THREE.Object3D;
@@ -97,25 +102,33 @@ export function createWeapon(): Weapon {
   const viewArms = new THREE.Group();
   root.add(viewArms);
 
-  const makeArm = (handAt: THREE.Vector3, elbowAt: THREE.Vector3) => {
-    // Unit-height geometry, so stretchBetween can scale it to the exact reach.
-    const forearm = taperedBox(6, 4.5, 1, material(SLEEVE));
-    viewArms.add(forearm);
-    stretchBetween(forearm, elbowAt, handAt);
+  // Two segments per arm, matching the character's sleeve-then-skin split and its LIMB-square
+  // cross-section. Unit-height geometry, so stretchBetween scales each to its exact reach.
+  const makeArm = (handAt: THREE.Vector3, elbowAt: THREE.Vector3, shoulderAt: THREE.Vector3) => {
+    const upper = taperedBox(LIMB, LIMB, 1, material(SHIRT));
+    viewArms.add(upper);
+    stretchBetween(upper, shoulderAt, elbowAt);
 
-    const hand = box(5, 5, 6, SKIN);
+    const lower = taperedBox(LIMB, LIMB, 1, material(SKIN));
+    viewArms.add(lower);
+    stretchBetween(lower, elbowAt, handAt);
+
+    const hand = box(LIMB * 1.15, LIMB, LIMB * 1.3, SKIN);
     hand.position.copy(handAt);
     viewArms.add(hand);
   };
 
-  makeArm(GRIP_HAND, RIGHT_ELBOW);
-  makeArm(FORE_HAND, LEFT_ELBOW);
+  makeArm(GRIP_HAND, RIGHT_ELBOW, RIGHT_SHOULDER);
+  makeArm(FORE_HAND, LEFT_ELBOW, LEFT_SHOULDER);
 
   let bobPhase = 0;
   let previousYaw = 0;
   let swayYaw = 0;
   let swayPitch = 0;
   let firstPerson = true;
+  /** Eased 0..1. A slide is entered at speed, so snapping the weapon into its low hold in one
+   *  frame is the most jarring thing on screen; this makes it a transition. */
+  let slideBlend = 0;
   const offset = new THREE.Vector3();
 
   return {
@@ -138,6 +151,10 @@ export function createWeapon(): Weapon {
       if (!firstPerson) return; // posed by the character's hand instead
 
       root.scale.setScalar(1);
+
+      const slideTarget = state.sliding ? 1 : 0;
+      slideBlend += (slideTarget - slideBlend) * (1 - Math.exp(-dt / 0.11));
+      if (Math.abs(slideTarget - slideBlend) < 0.001) slideBlend = slideTarget;
 
       const speed = vec3.horizontalLength(state.velocity);
       // Sliding is not walking. Left in, a 750 u/s slide drives the bob at several times
@@ -162,7 +179,7 @@ export function createWeapon(): Weapon {
       const follow = 1 - Math.exp(-dt / 0.08);
       // A slide turns the whole body with the mouse, so the raw delta is large and constant.
       // Damping it there keeps the weapon steady while you steer.
-      const swayScale = state.sliding ? 4 : 12;
+      const swayScale = 12 - slideBlend * 8;
       const targetYaw = Math.max(-1, Math.min(1, yawDelta * swayScale));
       const targetPitch = state.onGround ? 0 : Math.max(-1, Math.min(1, state.velocity.y / 600));
       swayYaw += (targetYaw - swayYaw) * follow;
@@ -173,15 +190,14 @@ export function createWeapon(): Weapon {
         Math.abs(Math.sin(bobPhase)) * bob * 0.8 - viewDuck * 1.5 + swayPitch * 2,
         0,
       );
-      // Tucked in tight during a slide, clear of the leg thrown out in front of it.
-      if (state.sliding) {
-        offset.x -= 2;
-        offset.y -= 3;
-      }
+      // Tucked in tight during a slide, clear of the leg thrown out in front of it - eased in
+      // rather than applied the instant the slide starts.
+      offset.x -= slideBlend * 2;
+      offset.y -= slideBlend * 3;
 
       root.position.copy(REST).add(offset);
       root.rotation.set(
-        swayPitch * 0.05 + (state.sliding ? 8 * DEG : 0),
+        swayPitch * 0.05 + slideBlend * 8 * DEG,
         -6 * DEG - swayYaw * 0.06,
         3 * DEG + swayYaw * 0.05,
       );

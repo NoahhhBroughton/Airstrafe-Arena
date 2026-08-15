@@ -70,9 +70,11 @@ persistent memory of project progress across sessions.
   using a separate model, so the two views can never disagree.
 - **First/third person toggle** (`V`), over-the-shoulder, raycasting its way back so it does not
   end up inside walls. Shoulder side is a setting.
-- **Blocky bone system** (`rig.ts`): tapered square prisms — `CylinderGeometry` with four radial
-  segments, since a scaled `BoxGeometry` cannot taper — stacked a few per bone so bends read as
-  curves rather than corners.
+- **Minecraft proportions, 1:1** — 8/12/12 pixels for head/torso/legs against a 72-unit hull, so
+  one pixel is 2.25 units and the three stack to exactly 72. Articulation is the deliberate
+  departure: elbows and knees, so the body holds a pose rather than swinging rigid planks.
+- **Pose transitions are blended**, not switched. Entering a slide at 750 u/s used to snap both
+  the body and the weapon into their slide pose in a single frame.
 - **Instagib laser weapon added** (`weapon.ts`), viewmodel only — no firing or hits, which stay
   in Phase 4. Built early so movement can be tuned against what the game looks like from behind
   the gun; bob and sway are a large part of how fast movement reads.

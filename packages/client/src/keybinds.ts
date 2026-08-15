@@ -30,6 +30,7 @@ export const CORE_ACTIONS: readonly ActionDef[] = [
   { id: "jump", label: "Jump", group: "Move" },
   { id: "crouch", label: "Crouch", group: "Move" },
   { id: "toggleView", label: "First / third person", group: "Debug" },
+  { id: "swapShoulder", label: "Swap shoulder (3rd person)", group: "Debug" },
   { id: "respawn", label: "Respawn", group: "Debug" },
 ];
 
@@ -58,6 +59,7 @@ export function defaultBinds(spots: readonly MapSpot[]): Binds {
     jump: ["Space", null],
     crouch: ["ControlLeft", null],
     toggleView: ["KeyV", null],
+    swapShoulder: ["KeyB", null],
     respawn: ["KeyR", null],
   };
   spots.forEach((_, i) => {
