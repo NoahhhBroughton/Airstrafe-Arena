@@ -53,8 +53,9 @@ const REST = new THREE.Vector3(10, -10, -30);
  * how they end up buried inside the gun. Pinning the hands to the grip and fore-end and then
  * *stretching* the forearms out to meet them makes the grip correct by construction.
  */
-const GRIP_HAND = new THREE.Vector3(0, -4, 5);
-const FORE_HAND = new THREE.Vector3(0, -3.5, -13);
+// Exported: the character solves its arms to these, so both views grip the same two points.
+export const GRIP_HAND = new THREE.Vector3(0, -4, 5);
+export const FORE_HAND = new THREE.Vector3(0, -3.5, -13);
 // Elbows enter frame from the lower right. Kept well forward of the camera - drawn back toward
 // it they pass within a few units of the near plane and fill the screen edge.
 const RIGHT_ELBOW = new THREE.Vector3(6, -16, 16);
@@ -113,8 +114,12 @@ export function createWeapon(): Weapon {
     viewArms.add(lower);
     stretchBetween(lower, elbowAt, handAt);
 
-    const hand = box(LIMB * 1.15, LIMB, LIMB * 1.3, SKIN);
+    // Hands wrap the weapon rather than sitting beside it as loose cubes: turned to face along
+    // the barrel, and tipped to follow the forearm coming into them.
+    const hand = box(LIMB * 1.2, LIMB * 0.95, LIMB * 1.45, SKIN);
     hand.position.copy(handAt);
+    hand.lookAt(handAt.clone().add(new THREE.Vector3(0, 0, -1)));
+    hand.rotateX(-18 * DEG);
     viewArms.add(hand);
   };
 
@@ -140,11 +145,12 @@ export function createWeapon(): Weapon {
       viewArms.visible = isFirstPerson;
 
       if (isFirstPerson) return;
-      // In the hand, the weapon is small, local and unswayed - the character's arm animation
-      // is what moves it.
-      root.position.set(0, -3, -7);
-      root.rotation.set(-80 * DEG, 0, 0);
-      root.scale.setScalar(0.85);
+      // Third person mounts it on the chest, not in a hand, and the arms are solved to reach
+      // it. Hanging it off a hand bone meant it inherited whatever way the forearm pointed,
+      // which aimed it at the floor. The mount sets its own position and rotation.
+      root.position.set(0, 0, 0);
+      root.rotation.set(0, 0, 0);
+      root.scale.setScalar(1);
     },
 
     update(state, viewDuck, yaw, dt) {

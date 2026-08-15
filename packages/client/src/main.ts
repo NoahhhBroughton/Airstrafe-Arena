@@ -90,7 +90,7 @@ async function main(): Promise<void> {
 
   const applyViewMode = () => {
     character.setFirstPerson(firstPerson);
-    weapon.attachTo(firstPerson ? camera : character.rightHand, firstPerson);
+    weapon.attachTo(firstPerson ? camera : character.weaponMount, firstPerson);
     if (!firstPerson) leftShoulder = settings.current.thirdPersonLeftShoulder;
   };
   applyViewMode();

@@ -16,7 +16,8 @@
 
 import * as THREE from "three";
 import { hullHeight, vec3, PLAYER_HEIGHT, type PlayerState } from "@airstrafe-arena/shared";
-import { createBone, slab, type Bone } from "./rig.js";
+import { createBone, slab, solveTwoBoneIK, type Bone } from "./rig.js";
+import { FORE_HAND, GRIP_HAND } from "./weapon.js";
 
 // Exported so the first-person arms in weapon.ts are built from the same numbers and colours.
 // They are separate meshes - the viewmodel needs bob and sway the world model must not have -
@@ -58,8 +59,8 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 export interface Character {
   /** World-space root. Add to the scene. */
   readonly object: THREE.Object3D;
-  /** Where the weapon attaches in third person. */
-  readonly rightHand: THREE.Object3D;
+  /** Where the weapon attaches in third person - a chest mount, not a hand. */
+  readonly weaponMount: THREE.Object3D;
   /** Hides the head so the camera is not inside it. */
   setFirstPerson(firstPerson: boolean): void;
   update(
@@ -123,23 +124,37 @@ export function createCharacter(): Character {
   visor.position.set(0, HEAD * 0.6, -HEAD / 2);
   head.add(visor);
 
+  /**
+   * Where the weapon rides in third person: chest height, forward and slightly right, with no
+   * rotation of its own so its barrel points straight down the body's forward axis.
+   *
+   * Mounted here rather than parented to a hand. A weapon hanging off a hand bone inherits
+   * whatever direction the forearm happens to point, which is how it ends up aimed at the
+   * ground and looking one-handed. Pinned here, the arms are solved to reach *it*.
+   */
+  const weaponMount = new THREE.Group();
+  weaponMount.position.set(2, 14, -4);
+  chest.add(weaponMount);
+
   const arms: Limb[] = [];
-  const hands: THREE.Object3D[] = [];
+  const shoulders: THREE.Vector3[] = [];
   const half = LIMB_LEN / 2;
 
   for (const side of [-1, 1]) {
     const upper = createBone(LIMB, LIMB, half, material(SHIRT), 1);
-    upper.pivot.position.set(side * (TORSO_W + LIMB) / 2, TORSO_H - LIMB / 2, 0);
+    const at = new THREE.Vector3((side * (TORSO_W + LIMB)) / 2, TORSO_H - LIMB / 2, 0);
+    upper.pivot.position.copy(at);
     chest.add(upper.pivot);
 
     const lower = createBone(LIMB, LIMB, half, material(SKIN), 1);
     upper.tip.add(lower.pivot);
 
-    const hand = new THREE.Group();
+    const hand = slab(LIMB * 1.15, LIMB * 0.9, LIMB * 1.35, material(SKIN));
+    hand.position.y = -LIMB * 0.35;
     lower.tip.add(hand);
 
     arms.push({ upper, lower });
-    hands.push(hand);
+    shoulders.push(at);
   }
 
   const legs: Limb[] = [];
@@ -198,9 +213,15 @@ export function createCharacter(): Character {
     { upper: 42 * DEG, lower: -74 * DEG },
   ];
 
+  // Grip points in chest space. The mount has no rotation, so these are just offsets from it.
+  const gripTarget = weaponMount.position.clone().add(GRIP_HAND);
+  const foreTarget = weaponMount.position.clone().add(FORE_HAND);
+  // Elbows drop back and out, away from the body.
+  const ELBOW_POLE = [new THREE.Vector3(-0.7, -1, 0.6), new THREE.Vector3(0.7, -1, 0.6)];
+
   return {
     object: root,
-    rightHand: hands[1] ?? new THREE.Group(),
+    weaponMount,
 
     setFirstPerson(value: boolean) {
       firstPerson = value;
@@ -287,22 +308,28 @@ export function createCharacter(): Character {
 
       if (firstPerson) return; // arms are hidden; the weapon viewmodel owns them
 
+      // Both hands are solved onto the weapon: right on the grip, left forward under the
+      // barrel. Two hands on one mounted weapon is what makes it read as *held* and aimed,
+      // rather than dangling from whichever way an arm happened to be posed.
+      //
+      // A small breathing sway on the mount, and a bit more of it while running, so the hold
+      // is not perfectly rigid - the arms follow because they track the weapon.
+      const sway = moving ? Math.sin(stride) * 1.2 : 0;
+      weaponMount.position.z = -4 + sway * 0.6 - slideBlend * 2;
+      weaponMount.position.y = 14 + sway * 0.4 - slideBlend * 3;
+      weaponMount.rotation.x = slideBlend * 6 * DEG;
+
+      const grip = weaponMount.position.clone().add(GRIP_HAND);
+      const fore = weaponMount.position.clone().add(FORE_HAND);
+      gripTarget.copy(grip);
+      foreTarget.copy(fore);
+
       arms.forEach((arm, i) => {
-        const phase = i === 0 ? stride + Math.PI : stride;
-        // Right arm (index 1) stays forward on the weapon; the left supports it. Held wide
-        // enough to clear the chest, or from directly behind the arms vanish into the torso
-        // and the character reads as armless.
-        const carry: Pose = {
-          upper: (i === 1 ? 48 : 40) * DEG + (moving ? Math.sin(phase) * 12 * DEG : 0),
-          lower: -40 * DEG,
-        };
-        const slide = SLIDE_ARMS[i] ?? carry;
-        arm.upper.pivot.rotation.set(
-          lerp(carry.upper, slide.upper, slideBlend),
-          0,
-          (i === 0 ? 1 : -1) * lerp(24, 14, slideBlend) * DEG,
-        );
-        arm.lower.pivot.rotation.x = lerp(carry.lower, slide.lower, slideBlend);
+        const target = i === 1 ? gripTarget : foreTarget;
+        const shoulder = shoulders[i];
+        const pole = ELBOW_POLE[i];
+        if (!shoulder || !pole) return;
+        solveTwoBoneIK(arm.upper, arm.lower, shoulder, target.clone(), half, half, pole.clone());
       });
     },
   };

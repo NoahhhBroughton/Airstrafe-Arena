@@ -107,6 +107,69 @@ export function createBone(
 }
 
 /**
+ * Bend a two-bone chain so its tip reaches `target`, both given in the parent's space.
+ *
+ * This exists because a weapon held in a hand inherits whatever direction the forearm happens
+ * to be pointing. Posing the arms and hoping is how the gun ends up aimed at the floor. Pin the
+ * weapon where it belongs instead, then solve the arms to reach it - the hold is then correct by
+ * construction, and moving the weapon just moves the hands with it.
+ *
+ * `pole` decides which way the joint bends: elbows point back and out, knees point forward.
+ */
+export function solveTwoBoneIK(
+  upper: Bone,
+  lower: Bone,
+  shoulder: THREE.Vector3,
+  target: THREE.Vector3,
+  upperLength: number,
+  lowerLength: number,
+  pole: THREE.Vector3,
+): void {
+  const toTarget = new THREE.Vector3().subVectors(target, shoulder);
+  const reach = upperLength + lowerLength;
+  // Clamp inside the reachable shell, or the law of cosines below goes imaginary.
+  const distance = Math.min(
+    Math.max(toTarget.length(), Math.abs(upperLength - lowerLength) + 0.01),
+    reach - 0.01,
+  );
+  if (distance < 1e-4) return;
+
+  const direction = toTarget.normalize();
+  const clamp = (v: number) => Math.min(1, Math.max(-1, v));
+
+  const shoulderAngle = Math.acos(
+    clamp(
+      (upperLength * upperLength + distance * distance - lowerLength * lowerLength) /
+        (2 * upperLength * distance),
+    ),
+  );
+  const elbowAngle = Math.acos(
+    clamp(
+      (upperLength * upperLength + lowerLength * lowerLength - distance * distance) /
+        (2 * upperLength * lowerLength),
+    ),
+  );
+
+  const axis = new THREE.Vector3().crossVectors(direction, pole);
+  if (axis.lengthSq() < 1e-8) axis.set(1, 0, 0);
+  axis.normalize();
+
+  const upperDirection = direction.clone().applyAxisAngle(axis, shoulderAngle);
+
+  // Bones hang along -Y and bend about their local X. Building the basis explicitly - rather
+  // than a shortest-arc rotation - pins the roll, so the elbow bends in the plane we chose
+  // instead of wherever the arc happened to leave it.
+  const localY = upperDirection.clone().negate();
+  const localZ = new THREE.Vector3().crossVectors(axis, localY).normalize();
+  const localX = new THREE.Vector3().crossVectors(localY, localZ).normalize();
+  upper.pivot.quaternion.setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(localX, localY, localZ),
+  );
+
+  lower.pivot.rotation.set(-(Math.PI - elbowAngle), 0, 0);
+}
+
+/**
  * Point a unit-height mesh from one place to another, stretching it to fit.
  *
  * Used for forearms, which have to actually reach the weapon. Posing them by rotation alone
