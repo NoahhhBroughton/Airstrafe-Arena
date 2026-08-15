@@ -23,7 +23,6 @@ import { createBone, slab, type Bone } from "./rig.js";
 // so the only way they can look like the same arms is to share every dimension that defines them.
 export const SKIN = 0xd8a07a;
 export const SHIRT = 0x3aa0a0;
-const SHIRT_DARK = 0x2c7d7d;
 const TROUSERS = 0x3b4a8f;
 const BOOTS = 0x2a2f3d;
 const HAIR = 0x3b2a1e;
@@ -107,14 +106,6 @@ export function createCharacter(): Character {
   torso.position.y = TORSO_H / 2;
   chest.add(torso);
 
-  // Shoulder line, capping the torso. Without it the torso's top is a bare quad, which in first
-  // person - where the head is hidden - is the whole of what you see looking down. Overhanging
-  // the arms slightly gives the top some shape and reads as shoulders in third person, which the
-  // Minecraft silhouette otherwise has none of.
-  const shoulders = slab(TORSO_W + LIMB * 0.9, 2 * PX, TORSO_D + PX, material(SHIRT_DARK));
-  shoulders.position.y = TORSO_H - PX;
-  chest.add(shoulders);
-
   const head = new THREE.Group();
   head.position.y = TORSO_H;
   chest.add(head);
@@ -170,6 +161,11 @@ export function createCharacter(): Character {
   let stride = 0;
   /** Eased 0..1, so entering and leaving a slide is a transition rather than a snap. */
   let slideBlend = 0;
+  /** Eased 0..1 for the airborne tuck. */
+  let airBlend = 0;
+  /** Kicked to 1 on touchdown and decayed, driving the landing crouch. */
+  let landImpulse = 0;
+  let wasOnGround = true;
   let firstPerson = true;
 
   const applyLimb = (limb: Limb, pose: Pose) => {
@@ -182,9 +178,24 @@ export function createCharacter(): Character {
     { upper: 52 * DEG, lower: -14 * DEG },
     { upper: 4 * DEG, lower: -118 * DEG },
   ];
+  /**
+   * Arms stay *forward* through a slide, pulled in tight rather than swung back.
+   *
+   * They used to rotate behind the body, which pointed the weapon backwards in third person
+   * while the first-person viewmodel still had it out front - the two views showing opposite
+   * things. Every pose here has to hold the weapon where first person holds it.
+   */
   const SLIDE_ARMS: Pose[] = [
-    { upper: -34 * DEG, lower: -52 * DEG },
-    { upper: -18 * DEG, lower: -64 * DEG },
+    { upper: 62 * DEG, lower: -52 * DEG },
+    { upper: 66 * DEG, lower: -44 * DEG },
+  ];
+  /**
+   * Knees up, the bhop tuck. Legs hanging slack mid-flight is the single biggest tell that a
+   * character is a physics capsule with limbs attached; pulling them up sells the jump.
+   */
+  const AIR_LEGS: Pose[] = [
+    { upper: 64 * DEG, lower: -96 * DEG },
+    { upper: 42 * DEG, lower: -74 * DEG },
   ];
 
   return {
@@ -210,9 +221,22 @@ export function createCharacter(): Character {
       slideBlend += (target - slideBlend) * (1 - Math.exp(-dt / 0.09));
       if (Math.abs(target - slideBlend) < 0.001) slideBlend = target;
 
+      // Airborne tuck, and the compression on touchdown. Leaving the ground eases out over a
+      // little longer than coming back to it, so a bhop chain does not strobe between poses.
+      const airTarget = state.onGround || state.sliding ? 0 : 1;
+      airBlend += (airTarget - airBlend) * (1 - Math.exp(-dt / (airTarget > 0 ? 0.11 : 0.07)));
+
+      if (!wasOnGround && state.onGround) landImpulse = 1;
+      wasOnGround = state.onGround;
+      landImpulse = Math.max(0, landImpulse - dt / 0.26);
+      // Squared so the absorb snaps in on contact and eases out, rather than fading linearly.
+      const absorb = landImpulse * landImpulse * 30 * DEG;
+
       const hull = hullHeight(viewDuck);
       // Hips sit at the top of the legs - 12 of the 32 pixels up - not at an eyeballed fraction.
-      hips.position.y = hull * (LIMB_LEN / PLAYER_HEIGHT);
+      // The landing dip is visual only: the camera keeps riding the simulated eye height, so
+      // the body sinks under it and springs back rather than the whole view lurching.
+      hips.position.y = hull * (LIMB_LEN / PLAYER_HEIGHT) - landImpulse * landImpulse * 5;
 
       // The upper body has to shrink with the hull, not just ride lower on it. At a fixed
       // height a ducked chest reaches above the ducked eye line and floods the view.
@@ -242,10 +266,22 @@ export function createCharacter(): Character {
           // Knees only ever bend one way: backwards.
           lower: -crouchBend * 2 - Math.max(0, Math.sin(phase)) * 26 * DEG,
         };
+
+        // Layered ground -> air -> slide, so a slide entered out of a jump resolves cleanly
+        // instead of fighting between two poses.
+        const air = AIR_LEGS[i] ?? walk;
         const slide = SLIDE_LEGS[i] ?? walk;
+        const grounded: Pose = {
+          upper: walk.upper + absorb * 0.55,
+          lower: walk.lower - absorb,
+        };
+        const airborne: Pose = {
+          upper: lerp(grounded.upper, air.upper, airBlend),
+          lower: lerp(grounded.lower, air.lower, airBlend),
+        };
         applyLimb(leg, {
-          upper: lerp(walk.upper, slide.upper, slideBlend),
-          lower: lerp(walk.lower, slide.lower, slideBlend),
+          upper: lerp(airborne.upper, slide.upper, slideBlend),
+          lower: lerp(airborne.lower, slide.lower, slideBlend),
         });
       });
 

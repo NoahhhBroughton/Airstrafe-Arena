@@ -122,13 +122,14 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
   Real skinning wants an authored, weighted model (glTF) rather than procedural geometry — an
   asset-pipeline decision, and Phase 2 already plans glTF loading for maps, so worth doing both
   at once.
-- Poses are hand-tuned constants rather than animation clips. Fine for four states (idle, walk,
-  crouch, slide); it will not scale to combat animations.
-- **Looking straight down in first person shows chest, not legs**, and that is geometry rather
-  than a bug: legs sit directly under the torso (as they must, or the model looks wrong from
-  every angle third person shows), so from directly above the torso occludes them. Games that
-  show legs there either stagger the body forward of the camera or rely on the legs swinging out
-  during a walk cycle. Worth revisiting only if it actually bothers anyone in play.
+- Poses are hand-tuned constants rather than animation clips. Fine for the six states there are
+  now (idle, walk, crouch, air, land, slide); it will not scale to combat animations.
+- **Every pose must hold the weapon where first person holds it.** The two views share one
+  weapon model but pose it from different places - the camera in first person, the character's
+  hand in third - so an arm pose that swings back points the gun backwards in third person while
+  first person still has it out front. That happened once with the slide and is easy to repeat.
+- CS2 does show your legs looking *straight* down; ours shows chest, because the legs sit
+  directly under the torso and it occludes them from directly above. Left alone for now.
 - Weapon is a viewmodel only. Firing, hit registration and any recoil or fire animation are
   Phase 4.
 
