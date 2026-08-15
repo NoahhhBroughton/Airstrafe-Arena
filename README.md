@@ -51,7 +51,13 @@ the trace turns blue above it — anything up there came from air strafing.
 
 One rig serves both camera modes ([character.ts](packages/client/src/character.ts)) — first
 person just hides the head and puts the camera in it. Two models would drift, and a pose fixed
-in one would stay wrong in the other. `V` swaps between them on the fly.
+in one would stay wrong in the other. `V` swaps between them on the fly, and the third-person
+camera sits over a shoulder (side is a setting) so the model never covers your crosshair.
+
+Everything is boxes — square cross-sections, tapered, flat-shaded. Limbs bend as *curves* rather
+than corners because each bone is a few stacked boxes sharing the bend
+([rig.ts](packages/client/src/rig.ts)). That's the cheap stand-in for skinning; real skinning
+needs an authored weighted mesh, which is bundled with Phase 2's glTF work.
 
 The instagib laser ([weapon.ts](packages/client/src/weapon.ts)) has no behaviour yet — no firing,
 no hits, that's Phase 4. It exists so movement can be tuned against what the game actually looks

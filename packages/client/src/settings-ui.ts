@@ -82,6 +82,12 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
         step: 1,
         hint: "Horizontal FOV at 4:3, quoted the way Source does. Widens on wider displays.",
       },
+      {
+        kind: "toggle",
+        key: "thirdPersonLeftShoulder",
+        label: "Third person: left shoulder",
+        hint: "Which shoulder the third-person camera sits over. Off is the right shoulder.",
+      },
     ],
   },
   {

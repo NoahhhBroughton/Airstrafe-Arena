@@ -34,6 +34,8 @@ export interface Settings {
   rawInput: boolean;
   /** Horizontal FOV at 4:3, the way Source quotes it. CS's default is 90. */
   fov: number;
+  /** Which shoulder the third-person camera sits over. */
+  thirdPersonLeftShoulder: boolean;
 
   autoBhop: boolean;
   airAccel: number;
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, "binds"> = {
   mYaw: 0.022,
   rawInput: true,
   fov: 90,
+  thirdPersonLeftShoulder: false,
   autoBhop: AUTO_BHOP_ENABLED,
   airAccel: AIR_ACCEL,
   airWishSpeedCap: AIR_WISH_SPEED_CAP,

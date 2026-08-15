@@ -35,8 +35,16 @@ import { buildActions, spotActionId } from "./keybinds.js";
  */
 const MAX_TICKS_PER_FRAME = 8;
 
-/** How far the third-person camera trails the eye, before wall clearance is applied. */
-const THIRD_PERSON_DISTANCE = 150;
+/**
+ * Third-person camera placement, relative to the eye.
+ *
+ * Over the shoulder rather than dead centre: a camera directly behind the head puts the model
+ * between you and your own crosshair, and the offset is what makes the character read as
+ * *your* character rather than something you are following.
+ */
+const THIRD_PERSON_DISTANCE = 130;
+const THIRD_PERSON_SHOULDER = 34;
+const THIRD_PERSON_RISE = 12;
 
 async function main(): Promise<void> {
   const app = document.getElementById("app");
@@ -139,6 +147,8 @@ async function main(): Promise<void> {
   const feet = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const lookDir = new THREE.Vector3();
+  const right = new THREE.Vector3();
+  const shoulder = new THREE.Vector3();
 
   function frame(now: number): void {
     requestAnimationFrame(frame);
@@ -194,13 +204,31 @@ async function main(): Promise<void> {
     if (firstPerson) {
       camera.position.copy(eye);
     } else {
-      // Pull straight back along the view. Raycast the way out and stop short of anything in
-      // the way, or the camera ends up inside walls the moment you back into one.
       lookDir.set(0, 0, -1).applyEuler(camera.rotation);
-      const back = { x: -lookDir.x * THIRD_PERSON_DISTANCE, y: -lookDir.y * THIRD_PERSON_DISTANCE, z: -lookDir.z * THIRD_PERSON_DISTANCE };
-      const blocked = collision.castRay(eye, back);
-      const reach = blocked ? Math.max(0, blocked.fraction * THIRD_PERSON_DISTANCE - 8) : THIRD_PERSON_DISTANCE;
-      camera.position.set(eye.x - lookDir.x * reach, eye.y - lookDir.y * reach, eye.z - lookDir.z * reach);
+      // Step sideways to the chosen shoulder first, then pull back along the view from there.
+      const side = settings.current.thirdPersonLeftShoulder ? -1 : 1;
+      shoulder
+        .set(0, 0, 0)
+        .addScaledVector(right.set(1, 0, 0).applyEuler(camera.rotation), THIRD_PERSON_SHOULDER * side);
+      shoulder.y += THIRD_PERSON_RISE;
+      shoulder.add(eye);
+
+      // Raycast the way out and stop short of anything in the way, or the camera ends up
+      // inside walls the moment you back into one.
+      const back = {
+        x: -lookDir.x * THIRD_PERSON_DISTANCE,
+        y: -lookDir.y * THIRD_PERSON_DISTANCE,
+        z: -lookDir.z * THIRD_PERSON_DISTANCE,
+      };
+      const blocked = collision.castRay(shoulder, back);
+      const reach = blocked
+        ? Math.max(0, blocked.fraction * THIRD_PERSON_DISTANCE - 8)
+        : THIRD_PERSON_DISTANCE;
+      camera.position.set(
+        shoulder.x - lookDir.x * reach,
+        shoulder.y - lookDir.y * reach,
+        shoulder.z - lookDir.z * reach,
+      );
     }
 
     weapon.update(state, viewDuck, input.yaw, frameDt);

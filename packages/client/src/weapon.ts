@@ -9,20 +9,22 @@
 // arms take over. One model, so the two views can never disagree about what you are holding.
 
 import * as THREE from "three";
-import { vec3, type PlayerState } from "@airstrafe-arena/shared";
+import { vec3, MAX_GROUND_SPEED, type PlayerState } from "@airstrafe-arena/shared";
+import { stretchBetween, taperedBox } from "./rig.js";
 
 const SKIN = 0xd8a07a;
+const SLEEVE = 0x46618f;
 const GUNMETAL = 0x2a2e38;
 const GUN_TRIM = 0x555c6b;
 const LASER = 0x5fd8ff;
 
 const DEG = Math.PI / 180;
 
+const material = (color: number): THREE.Material =>
+  new THREE.MeshLambertMaterial({ color, flatShading: true });
+
 function box(w: number, h: number, d: number, color: number): THREE.Mesh {
-  return new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshLambertMaterial({ color, flatShading: true }),
-  );
+  return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material(color));
 }
 
 /** Unlit, so the emitter reads as its own light source rather than a pale blue block in shade. */
@@ -33,14 +35,6 @@ function glow(w: number, h: number, d: number): THREE.Mesh {
   );
 }
 
-function limb(w: number, length: number, d: number, color: number): THREE.Group {
-  const pivot = new THREE.Group();
-  const mesh = box(w, length, d, color);
-  mesh.position.y = -length / 2;
-  pivot.add(mesh);
-  return pivot;
-}
-
 /**
  * Held low and right, angled slightly inward, the way a shouldered weapon reads first-person.
  *
@@ -49,6 +43,20 @@ function limb(w: number, length: number, d: number, color: number): THREE.Group 
  * shrinks it in frame without changing its proportions.
  */
 const REST = new THREE.Vector3(10, -10, -30);
+
+/**
+ * Where the hands sit on the weapon, in its local space, and where the arms enter frame from.
+ *
+ * Posing arms by rotation alone leaves the hand wherever the angles happen to land, which is
+ * how they end up buried inside the gun. Pinning the hands to the grip and fore-end and then
+ * *stretching* the forearms out to meet them makes the grip correct by construction.
+ */
+const GRIP_HAND = new THREE.Vector3(0, -4, 5);
+const FORE_HAND = new THREE.Vector3(0, -3.5, -13);
+// Elbows enter frame from the lower right. Kept well forward of the camera - drawn back toward
+// it they pass within a few units of the near plane and fill the screen edge.
+const RIGHT_ELBOW = new THREE.Vector3(5, -17, 15);
+const LEFT_ELBOW = new THREE.Vector3(-5, -16, 2);
 
 export interface Weapon {
   readonly object: THREE.Object3D;
@@ -80,8 +88,8 @@ export function createWeapon(): Weapon {
   stock.position.set(0, -1, 11);
   root.add(stock);
 
-  const grip = limb(4, 8, 5, GUNMETAL);
-  grip.position.set(0, -2, 4);
+  const grip = taperedBox(4, 3, 9, material(GUNMETAL));
+  grip.position.set(0, -4.5, 4);
   grip.rotation.x = -18 * DEG;
   root.add(grip);
 
@@ -89,16 +97,19 @@ export function createWeapon(): Weapon {
   const viewArms = new THREE.Group();
   root.add(viewArms);
 
-  // Trailing arm on the grip, leading arm forward under the barrel.
-  const rightArm = limb(4.5, 16, 4.5, SKIN);
-  rightArm.position.set(1.5, 2, 9);
-  rightArm.rotation.set(78 * DEG, 0, -10 * DEG);
-  viewArms.add(rightArm);
+  const makeArm = (handAt: THREE.Vector3, elbowAt: THREE.Vector3) => {
+    // Unit-height geometry, so stretchBetween can scale it to the exact reach.
+    const forearm = taperedBox(6, 4.5, 1, material(SLEEVE));
+    viewArms.add(forearm);
+    stretchBetween(forearm, elbowAt, handAt);
 
-  const leftArm = limb(4.5, 17, 4.5, SKIN);
-  leftArm.position.set(-1.5, 1, -9);
-  leftArm.rotation.set(66 * DEG, 0, 22 * DEG);
-  viewArms.add(leftArm);
+    const hand = box(5, 5, 6, SKIN);
+    hand.position.copy(handAt);
+    viewArms.add(hand);
+  };
+
+  makeArm(GRIP_HAND, RIGHT_ELBOW);
+  makeArm(FORE_HAND, LEFT_ELBOW);
 
   let bobPhase = 0;
   let previousYaw = 0;
@@ -118,9 +129,9 @@ export function createWeapon(): Weapon {
       if (isFirstPerson) return;
       // In the hand, the weapon is small, local and unswayed - the character's arm animation
       // is what moves it.
-      root.position.set(0, -2, -6);
+      root.position.set(0, -3, -7);
       root.rotation.set(-80 * DEG, 0, 0);
-      root.scale.setScalar(0.9);
+      root.scale.setScalar(0.85);
     },
 
     update(state, viewDuck, yaw, dt) {
@@ -129,12 +140,16 @@ export function createWeapon(): Weapon {
       root.scale.setScalar(1);
 
       const speed = vec3.horizontalLength(state.velocity);
-      const moving = speed > 20 && state.onGround;
+      // Sliding is not walking. Left in, a 750 u/s slide drives the bob at several times
+      // running cadence and the weapon visibly shakes itself apart.
+      const walking = speed > 20 && state.onGround && !state.sliding;
 
       // Bob is what sells speed in first person; without it, sprinting and standing still look
-      // identical from behind the gun.
-      bobPhase += moving ? speed * dt * 0.055 : 0;
-      const bob = moving ? Math.min(speed / 400, 1.6) : 0;
+      // identical from behind the gun. Clamped to run speed so anything faster - a bhop landing,
+      // a ramp exit - bobs at the same cadence rather than a frantic one.
+      const cadence = Math.min(speed, MAX_GROUND_SPEED);
+      bobPhase += walking ? cadence * dt * 0.055 : 0;
+      const bob = walking ? (cadence / MAX_GROUND_SPEED) * 1.4 : 0;
 
       // Sway lags the view: turn fast and the weapon trails, then catches up. Taken from the
       // yaw delta rather than raw mouse input so it behaves the same at any sensitivity.
@@ -145,7 +160,10 @@ export function createWeapon(): Weapon {
       previousYaw = yaw;
 
       const follow = 1 - Math.exp(-dt / 0.08);
-      const targetYaw = Math.max(-1, Math.min(1, yawDelta * 12));
+      // A slide turns the whole body with the mouse, so the raw delta is large and constant.
+      // Damping it there keeps the weapon steady while you steer.
+      const swayScale = state.sliding ? 4 : 12;
+      const targetYaw = Math.max(-1, Math.min(1, yawDelta * swayScale));
       const targetPitch = state.onGround ? 0 : Math.max(-1, Math.min(1, state.velocity.y / 600));
       swayYaw += (targetYaw - swayYaw) * follow;
       swayPitch += (targetPitch - swayPitch) * follow;
@@ -158,7 +176,7 @@ export function createWeapon(): Weapon {
       // Tucked in tight during a slide, clear of the leg thrown out in front of it.
       if (state.sliding) {
         offset.x -= 2;
-        offset.y -= 4;
+        offset.y -= 3;
       }
 
       root.position.copy(REST).add(offset);

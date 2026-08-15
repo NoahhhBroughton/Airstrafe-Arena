@@ -68,8 +68,11 @@ persistent memory of project progress across sessions.
   hierarchy, posed for standing, walking, crouching and sliding. Crouching previously had no
   visual tell at all. One rig serves both camera modes — first person hides the head rather than
   using a separate model, so the two views can never disagree.
-- **First/third person toggle** (`V`), with the third-person camera raycasting its way back so
-  it does not end up inside walls.
+- **First/third person toggle** (`V`), over-the-shoulder, raycasting its way back so it does not
+  end up inside walls. Shoulder side is a setting.
+- **Blocky bone system** (`rig.ts`): tapered square prisms — `CylinderGeometry` with four radial
+  segments, since a scaled `BoxGeometry` cannot taper — stacked a few per bone so bends read as
+  curves rather than corners.
 - **Instagib laser weapon added** (`weapon.ts`), viewmodel only — no firing or hits, which stay
   in Phase 4. Built early so movement can be tuned against what the game looks like from behind
   the gun; bob and sway are a large part of how fast movement reads.
@@ -111,12 +114,14 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
 - `AIR_WISH_SPEED_CAP` is now 75. It is the knob to reach for if strafing still doesn't feel
   right — acceleration is saturated, so this is the only thing that changes air control.
 - Verify the sensitivity match with a 360° test against CS rather than trusting it on paper.
-- The character is greybox: flat-shaded procedural geometry, no textures, no authored animation.
-  Limbs are *tapered segments with a rounded cap at each joint*, which is what keeps a bend from
-  showing the corner of one segment poking out of the other. That cap is standing in for what a
-  skinned mesh would do — real skinning deforms the surface across the joint instead, and wants
-  an authored, weighted model (glTF) rather than procedural boxes and cylinders. That is an asset
-  pipeline decision, and Phase 2 already plans glTF loading for maps; worth doing both at once.
+- The character is greybox: flat-shaded procedural boxes, no textures, no authored animation.
+  Bends are approximated by subdividing each bone and sharing the angle across the parts, which
+  curves the silhouette but does not deform the surface across a joint the way skinning would.
+  Real skinning wants an authored, weighted model (glTF) rather than procedural geometry — an
+  asset-pipeline decision, and Phase 2 already plans glTF loading for maps, so worth doing both
+  at once.
+- Poses are hand-tuned constants rather than animation clips. Fine for four states (idle, walk,
+  crouch, slide); it will not scale to combat animations.
 - Weapon is a viewmodel only. Firing, hit registration and any recoil or fire animation are
   Phase 4.
 
