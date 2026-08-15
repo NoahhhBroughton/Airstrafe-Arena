@@ -23,6 +23,7 @@ import { createBone, slab, type Bone } from "./rig.js";
 // so the only way they can look like the same arms is to share every dimension that defines them.
 export const SKIN = 0xd8a07a;
 export const SHIRT = 0x3aa0a0;
+const SHIRT_DARK = 0x2c7d7d;
 const TROUSERS = 0x3b4a8f;
 const BOOTS = 0x2a2f3d;
 const HAIR = 0x3b2a1e;
@@ -90,8 +91,12 @@ export function createCharacter(): Character {
    * version staggered them to keep the legs visible when looking straight down - but a torso
    * that overhangs its own legs is wrong from every angle that actually shows the model, and
    * third person shows it constantly.
+   *
+   * Deep enough that the chest is not directly underfoot. First person hides the head, so a
+   * torso sitting right below the eye presents its flat top face straight up the camera and
+   * reads as a cut-off neck. Set back, you look along the chest instead of down into it.
    */
-  const BODY_BACK = 4;
+  const BODY_BACK = 9;
 
   hips.position.z = BODY_BACK;
 
@@ -101,6 +106,14 @@ export function createCharacter(): Character {
   const torso = slab(TORSO_W, TORSO_H, TORSO_D, material(SHIRT));
   torso.position.y = TORSO_H / 2;
   chest.add(torso);
+
+  // Shoulder line, capping the torso. Without it the torso's top is a bare quad, which in first
+  // person - where the head is hidden - is the whole of what you see looking down. Overhanging
+  // the arms slightly gives the top some shape and reads as shoulders in third person, which the
+  // Minecraft silhouette otherwise has none of.
+  const shoulders = slab(TORSO_W + LIMB * 0.9, 2 * PX, TORSO_D + PX, material(SHIRT_DARK));
+  shoulders.position.y = TORSO_H - PX;
+  chest.add(shoulders);
 
   const head = new THREE.Group();
   head.position.y = TORSO_H;
@@ -207,7 +220,10 @@ export function createCharacter(): Character {
       // Slide pulls the chest back as well as tilting it: ducked and leaning, its top corner
       // otherwise passes close enough to the eye to show the inside of the torso.
       chest.position.z = slideBlend * 7;
-      chest.rotation.x = lerp(0, -14 * DEG, slideBlend);
+      // A few degrees of forward posture at rest. Upright, the chest presents a perfectly flat
+      // top face to a camera looking straight down at it, which is both unnatural and the
+      // hardest thing to read - every pixel of it catches the light identically.
+      chest.rotation.x = lerp(7 * DEG, -14 * DEG, slideBlend);
 
       const speed = vec3.horizontalLength(state.velocity);
       const moving = speed > 20 && state.onGround && !state.sliding;

@@ -124,6 +124,11 @@ Measured as working but not judged as *feeling* right — decide at the keyboard
   at once.
 - Poses are hand-tuned constants rather than animation clips. Fine for four states (idle, walk,
   crouch, slide); it will not scale to combat animations.
+- **Looking straight down in first person shows chest, not legs**, and that is geometry rather
+  than a bug: legs sit directly under the torso (as they must, or the model looks wrong from
+  every angle third person shows), so from directly above the torso occludes them. Games that
+  show legs there either stagger the body forward of the camera or rely on the legs swinging out
+  during a walk cycle. Worth revisiting only if it actually bothers anyone in play.
 - Weapon is a viewmodel only. Firing, hit registration and any recoil or fire animation are
   Phase 4.
 
